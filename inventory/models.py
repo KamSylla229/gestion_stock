@@ -1,3 +1,104 @@
 from django.db import models
 
-# Create your models here.
+
+class Categorie(models.Model):
+    """Regroupe les produits par famille (ex: Alimentation, Boissons)."""
+
+    nom = models.CharField(max_length=100, unique=True)
+    actif = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Catégorie"
+        verbose_name_plural = "Catégories"
+        ordering = ["nom"]
+
+    def __str__(self):
+        return self.nom
+
+
+class Fournisseur(models.Model):
+    """Un fournisseur qui livre des produits à l'entreprise."""
+
+    nom = models.CharField(max_length=150)
+    telephone = models.CharField(max_length=20, blank=True)
+    email = models.EmailField(blank=True)
+    adresse = models.CharField(max_length=255, blank=True)
+    actif = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Fournisseur"
+        verbose_name_plural = "Fournisseurs"
+        ordering = ["nom"]
+
+    def __str__(self):
+        return self.nom
+
+
+class Produit(models.Model):
+    """
+    Un article vendu par l'entreprise.
+
+    quantite_stock ne doit JAMAIS être modifié directement ailleurs que
+    dans inventory/services.py, pour garantir qu'il reste synchronisé
+    avec l'historique des Mouvement.
+    """
+
+    reference = models.CharField(max_length=50, unique=True)
+    nom = models.CharField(max_length=150)
+    categorie = models.ForeignKey(
+        Categorie, on_delete=models.PROTECT, related_name="produits"
+    )
+    fournisseur = models.ForeignKey(
+        Fournisseur,
+        on_delete=models.PROTECT,
+        related_name="produits",
+        null=True,
+        blank=True,
+    )
+    prix_achat = models.DecimalField(max_digits=10, decimal_places=2)
+    prix_vente = models.DecimalField(max_digits=10, decimal_places=2)
+    quantite_stock = models.PositiveIntegerField(default=0)
+    seuil_alerte = models.PositiveIntegerField(default=5)
+    actif = models.BooleanField(default=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Produit"
+        verbose_name_plural = "Produits"
+        ordering = ["nom"]
+
+    def __str__(self):
+        return f"{self.reference} — {self.nom}"
+
+
+class Mouvement(models.Model):
+    """
+    Trace un mouvement de stock (entrée ou sortie) sur un produit.
+
+    Un Mouvement ne doit jamais être créé directement dans une vue ou un
+    script : il doit passer par services.enregistrer_mouvement(), seule
+    fonction autorisée à modifier Produit.quantite_stock en même temps.
+    """
+
+    ENTREE = "ENTREE"
+    SORTIE = "SORTIE"
+    TYPE_CHOICES = [
+        (ENTREE, "Entrée"),
+        (SORTIE, "Sortie"),
+    ]
+
+    produit = models.ForeignKey(
+        Produit, on_delete=models.PROTECT, related_name="mouvements"
+    )
+    type_mouvement = models.CharField(max_length=10, choices=TYPE_CHOICES)
+    quantite = models.PositiveIntegerField()
+    motif = models.CharField(max_length=255, blank=True)
+    date_mouvement = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Mouvement"
+        verbose_name_plural = "Mouvements"
+        ordering = ["-date_mouvement"]
+
+    def __str__(self):
+        return f"{self.get_type_mouvement_display()} de {self.quantite} — {self.produit.nom}"
