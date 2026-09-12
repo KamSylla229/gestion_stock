@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block titre %}{{ titre }} — StockFlow{% endblock %}
+
+{% block contenu %}
+<h1 class="h4 mb-3">{{ titre }}</h1>
+
+<div class="row">
+    <div class="col-md-6">
+        <form method="post">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            {% for champ in form %}
+                <div class="mb-3">
+                    {% if champ.field.widget.input_type == "checkbox" %}
+                        <div class="form-check">
+                            {{ champ }}
+                            <label class="form-check-label" for="{{ champ.id_for_label }}">{{ champ.label }}</label>
+                        </div>
+                    {% else %}
+                        <label for="{{ champ.id_for_label }}" class="form-label">{{ champ.label }}</label>
+                        {{ champ }}
+                    {% endif %}
+                    {% if champ.errors %}
+                        <div class="text-danger small">{{ champ.errors|striptags }}</div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+
+            <button type="submit" class="btn btn-primary">Enregistrer</button>
+            <a href="{% url 'inventory:produit_liste' %}" class="btn btn-link">Annuler</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -74,6 +74,11 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
+# Authentification : où rediriger selon l'état de connexion
+LOGIN_URL = 'inventory:connexion'
+LOGIN_REDIRECT_URL = 'inventory:produit_liste'
+LOGOUT_REDIRECT_URL = 'inventory:connexion'
+
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases

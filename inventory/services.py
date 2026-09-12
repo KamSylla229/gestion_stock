@@ -11,7 +11,13 @@ def enregistrer_mouvement(produit: Produit, type_mouvement: str, quantite: int, 
 
     Crée un Mouvement et met à jour le stock du produit dans la même
     transaction : soit les deux opérations réussissent, soit aucune.
+
+    Lève ValidationError (exception métier) si la quantité est invalide,
+    si le stock est insuffisant ou si le type de mouvement est inconnu.
     """
+    if quantite is None or quantite <= 0:
+        raise ValidationError("La quantité doit être strictement positive.")
+
     if type_mouvement == Mouvement.ENTREE:
         produit.quantite_stock += quantite
     elif type_mouvement == Mouvement.SORTIE:

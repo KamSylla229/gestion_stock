@@ -1,4 +1,5 @@
 from django.db import models
+from django.urls import reverse
 
 
 class Categorie(models.Model):
@@ -69,6 +70,15 @@ class Produit(models.Model):
 
     def __str__(self):
         return f"{self.reference} — {self.nom}"
+
+    def get_absolute_url(self):
+        # Utilisée automatiquement par CreateView/UpdateView pour rediriger
+        # vers la fiche du produit après un enregistrement réussi.
+        return reverse("inventory:produit_detail", kwargs={"pk": self.pk})
+
+    @property
+    def stock_bas(self):
+        return self.quantite_stock <= self.seuil_alerte
 
 
 class Mouvement(models.Model):

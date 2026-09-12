@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block titre %}Historique — StockFlow{% endblock %}
+
+{% block contenu %}
+<h1 class="h4 mb-3">Historique des mouvements</h1>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-3">
+        <select name="produit" class="form-select">
+            <option value="">Tous les produits</option>
+            {% for produit in produits %}
+                <option value="{{ produit.pk }}" {% if filtres.produit == produit.pk|stringformat:"s" %}selected{% endif %}>{{ produit.nom }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-2">
+        <select name="type" class="form-select">
+            <option value="">Tous les types</option>
+            {% for valeur, libelle in types_mouvement %}
+                <option value="{{ valeur }}" {% if filtres.type == valeur %}selected{% endif %}>{{ libelle }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-2">
+        <input type="date" name="date_debut" class="form-control" value="{{ filtres.date_debut|default:'' }}">
+    </div>
+    <div class="col-md-2">
+        <input type="date" name="date_fin" class="form-control" value="{{ filtres.date_fin|default:'' }}">
+    </div>
+    <div class="col-md-2">
+        <button type="submit" class="btn btn-secondary w-100">Filtrer</button>
+    </div>
+    <div class="col-md-1">
+        <a href="{% url 'inventory:mouvement_liste' %}" class="btn btn-link">Réinitialiser</a>
+    </div>
+</form>
+
+<table class="table table-striped table-sm align-middle">
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Produit</th>
+            <th>Type</th>
+            <th class="text-end">Quantité</th>
+            <th>Motif</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for mouvement in mouvements %}
+            <tr>
+                <td>{{ mouvement.date_mouvement|date:"d/m/Y H:i" }}</td>
+                <td><a href="{{ mouvement.produit.get_absolute_url }}">{{ mouvement.produit.nom }}</a></td>
+                <td>
+                    {% if mouvement.type_mouvement == "ENTREE" %}
+                        <span class="badge bg-success">Entrée</span>
+                    {% else %}
+                        <span class="badge bg-danger">Sortie</span>
+                    {% endif %}
+                </td>
+                <td class="text-end">{{ mouvement.quantite }}</td>
+                <td>{{ mouvement.motif|default:"—" }}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="5" class="text-center text-muted">Aucun mouvement trouvé.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if is_paginated %}
+    <nav>
+        <ul class="pagination">
+            {% if page_obj.has_previous %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&{{ querystring }}">Précédent</a></li>
+            {% endif %}
+            <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+            {% if page_obj.has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&{{ querystring }}">Suivant</a></li>
+            {% endif %}
+        </ul>
+    </nav>
+{% endif %}
+{% endblock %}
