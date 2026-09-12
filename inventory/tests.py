@@ -82,9 +82,17 @@ class AuthentificationTests(TestCase):
     """Vérifie que les pages privées sont bien protégées."""
 
     def test_pages_privees_redirigent_vers_connexion(self):
+        """AUCUNE page de l'application n'est accessible sans connexion."""
+        categorie = Categorie.objects.create(nom="Test")
+        produit = Produit.objects.create(
+            reference="AUT-001", nom="Produit", categorie=categorie,
+            prix_achat=100, prix_vente=150,
+        )
         urls = [
             reverse("inventory:produit_liste"),
             reverse("inventory:produit_creer"),
+            reverse("inventory:produit_detail", kwargs={"pk": produit.pk}),
+            reverse("inventory:produit_modifier", kwargs={"pk": produit.pk}),
             reverse("inventory:mouvement_liste"),
             reverse("inventory:entree_stock"),
             reverse("inventory:sortie_stock"),
@@ -94,6 +102,25 @@ class AuthentificationTests(TestCase):
                 reponse = self.client.get(url)
                 self.assertEqual(reponse.status_code, 302)
                 self.assertIn(reverse("inventory:connexion"), reponse.url)
+
+    def test_aucun_lien_prive_visible_sans_connexion(self):
+        """La page de connexion ne doit exposer ni menu ni lien vers l'app."""
+        reponse = self.client.get(reverse("inventory:connexion"))
+        contenu = reponse.content.decode()
+
+        self.assertNotIn(reverse("inventory:produit_liste"), contenu)
+        self.assertNotIn(reverse("inventory:mouvement_liste"), contenu)
+        self.assertNotIn(reverse("inventory:entree_stock"), contenu)
+        self.assertNotIn(reverse("inventory:sortie_stock"), contenu)
+
+    def test_utilisateur_connecte_ne_voit_pas_la_page_de_connexion(self):
+        """Déjà connecté (y compris via /admin/) : /connexion/ renvoie vers l'app."""
+        User.objects.create_user(username="testeur", password="motdepasse123")
+        self.client.login(username="testeur", password="motdepasse123")
+
+        reponse = self.client.get(reverse("inventory:connexion"))
+        self.assertEqual(reponse.status_code, 302)
+        self.assertEqual(reponse.url, reverse("inventory:produit_liste"))
 
     def test_page_connexion_accessible_sans_authentification(self):
         reponse = self.client.get(reverse("inventory:connexion"))

@@ -12,7 +12,12 @@ urlpatterns = [
     # Authentification (vues natives Django)
     path(
         "connexion/",
-        auth_views.LoginView.as_view(template_name="inventory/connexion.html"),
+        auth_views.LoginView.as_view(
+            template_name="inventory/connexion.html",
+            # Un utilisateur déjà connecté n'a rien à faire sur la page de
+            # connexion : on le renvoie directement vers l'application.
+            redirect_authenticated_user=True,
+        ),
         name="connexion",
     ),
     path("deconnexion/", auth_views.LogoutView.as_view(), name="deconnexion"),
