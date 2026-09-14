@@ -1,5 +1,7 @@
-{# Menu de navigation, partagé par la sidebar (desktop) et le menu déroulant (mobile).
-   Chaque lien n'apparaît que si l'utilisateur a la permission correspondante. #}
+{% comment %}
+Menu de navigation, partagé par la sidebar (desktop) et le menu déroulant (mobile).
+Chaque lien n'apparaît que si l'utilisateur a la permission correspondante.
+{% endcomment %}
 {% if perms.inventory.acceder_tableau_bord %}
     <a class="list-group-item list-group-item-action{% if section == 'tableau_bord' %} active{% endif %}"
        href="{% url 'inventory:tableau_bord' %}">Tableau de bord</a>

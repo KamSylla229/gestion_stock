@@ -849,3 +849,45 @@ class EncodageEmailsTests(TestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         self._verifier_encodable(mail.outbox[0])
+
+
+class TemplatesTests(BaseApplicationTestCase):
+    """
+    Non-regression : en Django, {# ... #} ne commente QUE sur une seule ligne.
+    Un commentaire etale sur plusieurs lignes n'est pas reconnu et s'affiche
+    tel quel dans la page (bug constate sur le menu de navigation).
+    """
+
+    def setUp(self):
+        creer_utilisateur("gerant", groupe="Gerant")
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+        self.categorie = Categorie.objects.create(nom="Alimentation")
+        self.produit = Produit.objects.create(
+            reference="TPL-001", nom="Produit", categorie=self.categorie,
+            prix_achat=100, prix_vente=150, quantite_stock=10,
+        )
+
+    def test_aucun_marqueur_de_template_dans_les_pages(self):
+        urls = [
+            reverse("inventory:tableau_bord"),
+            reverse("inventory:produit_liste"),
+            reverse("inventory:produit_detail", kwargs={"pk": self.produit.pk}),
+            reverse("inventory:produit_creer"),
+            reverse("inventory:mouvement_liste"),
+            reverse("inventory:entree_stock"),
+            reverse("inventory:sortie_stock"),
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                contenu = self.client.get(url).content.decode()
+                for marqueur in ("{#", "#}", "{%", "%}", "{{", "}}"):
+                    self.assertNotIn(
+                        marqueur, contenu,
+                        f"Marqueur de template {marqueur!r} visible dans la page {url}",
+                    )
+
+    def test_page_connexion_sans_marqueur_de_template(self):
+        self.client.logout()
+        contenu = self.client.get(reverse("inventory:connexion")).content.decode()
+        for marqueur in ("{#", "#}", "{%", "%}", "{{", "}}"):
+            self.assertNotIn(marqueur, contenu)
