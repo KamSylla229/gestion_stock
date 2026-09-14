@@ -3,6 +3,126 @@
 Fonctionnalités volontairement reportées après la v1.0. Le périmètre de la v1.0
 a été tenu fermé pour livrer un produit fiable plutôt qu'un produit large.
 
+---
+
+# Écart avec les maquettes de référence
+
+La refonte visuelle (commit `ea19f94`) a repris l'identité des maquettes sur les
+7 écrans existants. Les éléments ci-dessous apparaissent dans les maquettes mais
+n'ont **pas** été construits : ils demandent des champs, des calculs ou des
+écrans qui n'existent pas encore.
+
+Ils sont classés par **prérequis technique**, pas par écran : c'est ce qui
+détermine l'ordre de réalisation.
+
+## A. Sans modification du schéma — gains rapides
+
+Réalisables immédiatement avec les données actuelles.
+
+| # | Élément | Écran |
+|---|---|---|
+| A1 | Séparateur de milliers sur les montants (`18 450 000 F` au lieu de `18450000`) — `USE_THOUSAND_SEPARATOR = True` | partout |
+| A2 | Colonne « Valeur » (stock × prix d'achat) dans la liste des produits | Produits |
+| A3 | Onglets d'état complets : Tous / En stock / Sous seuil / Rupture / Désactivés | Produits |
+| A4 | Pagination numérotée (1 2 3 … 10) au lieu de Précédent / Suivant | Produits, Historique |
+| A5 | KPI « Mouvements du jour » séparés entrées / sorties (12 / 9) | Tableau de bord |
+| A6 | KPI « Sorties de la semaine » valorisées au prix d'achat | Tableau de bord |
+| A7 | Carte « Produits les plus mouvementés » (sorties et restant sur 7 jours) | Tableau de bord |
+| A8 | Sélecteur de période Jour / 7 jours / Mois | Tableau de bord |
+| A9 | KPI fiche produit : sorties sur 30 jours, moyenne par jour, couverture en jours, dernière entrée | Fiche produit |
+| A10 | Marge affichée en pourcentage en plus du montant | Fiche produit |
+| A11 | Coordonnées du fournisseur complètes sur la fiche produit (déjà en base, partiellement affichées) | Fiche produit |
+| A12 | Recherche par produit dans l'historique (champ texte, pas seulement la liste déroulante) | Historique |
+| A13 | Export Excel de l'**historique des mouvements** (l'export actuel ne porte que sur l'état du stock) | Historique |
+| A14 | Bouton « Sortir tout le stock disponible » | Sortie |
+| A15 | Compteurs « Sorties aujourd'hui » et « Valeur de la sortie » dans le panneau latéral | Sortie |
+| A16 | Encadré conseil « Le seuil a été franchi N fois en 30 jours » | Fiche produit |
+
+## B. Nécessite des champs sur `Mouvement`
+
+Une seule migration débloque tout ce bloc. **À faire en premier demain.**
+
+Champs à ajouter : `utilisateur` (FK User), `stock_apres` (entier),
+`document` (référence de bon, texte), `destination` (client ou chantier, texte),
+et la valeur `AJUSTEMENT` dans `TYPE_CHOICES`.
+
+| # | Élément | Écran |
+|---|---|---|
+| B1 | Colonne « Par » / utilisateur dans l'historique, la fiche produit et le tableau de bord | 3 écrans |
+| B2 | Filtre par utilisateur dans l'historique | Historique |
+| B3 | Colonne « Stock après » figée au moment du mouvement | Historique, fiche produit |
+| B4 | Colonne « Document » (BON-0412, BL-2214) + recherche par référence de bon | Historique |
+| B5 | Champs « Client ou destination » et « Référence du bon » au formulaire de sortie | Sortie |
+| B6 | Type de mouvement « Ajustement » (casse, écart d'inventaire) | Sortie, historique |
+| B7 | Colonne « Valeur » du mouvement | Historique |
+
+## C. Nécessite des champs sur `Produit` / `Fournisseur`
+
+| # | Élément | Champ à ajouter |
+|---|---|---|
+| C1 | Unité de mesure affichée partout (« 14 barres », « 0 sac ») | `Produit.unite` |
+| C2 | Délai de livraison habituel du fournisseur | `Fournisseur.delai_jours` |
+| C3 | Contact nommé chez le fournisseur | `Fournisseur.contact` |
+| C4 | Date de dernière commande et bouton « Commander N unités » | modèle `Commande` à créer |
+
+## D. Écrans entiers à construire
+
+### D1 · Page « Alertes et réapprovisionnement » (maquette 7)
+- Trois colonnes : Rupture totale / Sous le seuil / À surveiller
+- Estimation des jours restants avant rupture (basée sur les sorties des 30 derniers jours)
+- Tableau de proposition de réapprovisionnement : quantité à commander, coût estimé, délai
+- Total à engager
+- Aperçu du dernier email d'alerte envoyé, avec son statut
+- Bouton « Régler les seuils » (édition groupée des seuils)
+- Bouton « Générer un bon de commande »
+
+Prérequis : C2 (délai fournisseur) pour les colonnes délai.
+
+### D2 · Page « Rapports » (maquette 8)
+- Cinq types : État du stock, Mouvements, Rotation des produits, Activité par utilisateur, Pertes et casses
+- Filtres période / catégories / statut
+- Aperçu à l'écran : tableau par catégorie avec références, quantité, valeur, part en %, alertes
+- Graphique de répartition de la valeur
+- Export Excel **et PDF**
+
+Prérequis : B1 pour « Activité par utilisateur », B6 pour « Pertes et casses ».
+
+### D3 · Page « Paramètres »
+- Nom et identité de l'entreprise (affichés dans la sidebar, les emails et les exports)
+- Adresse de destination des alertes
+- Heure d'envoi du rapport quotidien
+- Gestion des catégories et des fournisseurs sans passer par `/admin/`
+
+### D4 · Compléments d'authentification (maquette 1)
+- Case « Rester connecté »
+- Lien « Mot de passe oublié » et parcours de réinitialisation par email
+- Bouton œil pour afficher le mot de passe saisi
+- Journal des connexions (« chaque connexion est enregistrée avec sa date et son heure »)
+
+## E. Indicateurs avancés
+
+Calculs à spécifier avant de coder — la règle métier n'est pas évidente.
+
+| # | Indicateur | Question à trancher |
+|---|---|---|
+| E1 | Rotation moyenne (21 jours) | Sur quelle base : sorties / stock moyen, sur quelle période ? |
+| E2 | Stock dormant (14 réf.) | Seuil d'inactivité : 60 jours ? configurable ? |
+| E3 | Marge potentielle | Sur le stock actuel, au prix de vente affiché |
+| E4 | Variation « +4,1 % sur 7 jours » | Variation de quoi : valeur du stock, sorties ? |
+| E5 | Couverture en jours | Moyenne des sorties sur 30 jours, ou pondérée ? |
+
+## F. Hors périmètre v1 — catalogue d'upsell
+
+Explicitement exclus par la dernière page des maquettes.
+
+- Multi-dépôts et transferts entre dépôts
+- Inventaire physique et régularisation
+- Scan code-barres / QR
+- Quantité réservée (affichée « Réservé 0 » dans la maquette)
+- Rafraîchissement temps réel (« actualisé il y a 8 s »)
+
+---
+
 ## Priorité haute
 
 ### Traçabilité utilisateur sur les mouvements
