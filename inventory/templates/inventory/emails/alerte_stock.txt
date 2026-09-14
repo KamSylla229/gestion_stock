@@ -1,0 +1,20 @@
+{{ nom_application }} — ALERTE DE STOCK
+
+Statut : {% if niveau == "RUPTURE" %}RUPTURE DE STOCK{% else %}STOCK CRITIQUE{% endif %}
+
+{% if niveau == "RUPTURE" %}Le produit ci-dessous n'a plus aucune unite en stock.
+Un reapprovisionnement est necessaire immediatement.{% else %}Le produit ci-dessous vient de passer au niveau ou en dessous de son
+seuil d'alerte suite a une sortie de stock.{% endif %}
+
+Produit               : {{ produit.nom }}
+Reference             : {{ produit.reference }}
+Stock avant la sortie : {{ stock_avant }}
+Quantite sortie       : - {{ quantite_sortie }}
+Stock actuel          : {{ stock_apres }}
+Seuil d'alerte        : {{ seuil_alerte }}
+Date de l'alerte      : {{ date_alerte|date:"d/m/Y a H:i" }}
+{% if site_url %}
+Fiche produit : {{ site_url }}{{ produit.get_absolute_url }}
+{% endif %}
+--
+Email automatique envoye par {{ nom_application }}. Merci de ne pas y repondre.

@@ -32,19 +32,30 @@ class ProduitAdmin(admin.ModelAdmin):
     )
     list_filter = ("categorie", "fournisseur", "actif")
     search_fields = ("reference", "nom")
+    # quantite_stock est affiché mais non modifiable : il ne peut évoluer que
+    # via services.enregistrer_mouvement(), sinon il se désynchroniserait de
+    # l'historique des mouvements.
+    readonly_fields = ("quantite_stock", "date_creation")
 
 
 @admin.register(Mouvement)
 class MouvementAdmin(admin.ModelAdmin):
+    """
+    Historique en consultation seule.
+
+    Créer un mouvement ici contournerait services.enregistrer_mouvement() : le
+    mouvement serait enregistré sans que le stock du produit bouge. L'ajout et
+    la modification sont donc désactivés — les entrées et sorties se font dans
+    l'application (menu « Entrée de stock » / « Sortie de stock »).
+    """
+
     list_display = ("produit", "type_mouvement", "quantite", "date_mouvement")
     list_filter = ("type_mouvement", "date_mouvement")
     search_fields = ("produit__nom", "produit__reference")
+    readonly_fields = ("produit", "type_mouvement", "quantite", "motif", "date_mouvement")
 
-    def get_readonly_fields(self, request, obj=None):
-        # obj is None => formulaire de création : tout est éditable.
-        # obj existant => formulaire d'édition : tout devient readonly,
-        # pour qu'un mouvement déjà créé ne puisse plus être trafiqué
-        # (sinon quantite_stock se désynchroniserait de l'historique).
-        if obj is None:
-            return ()
-        return ("produit", "type_mouvement", "quantite", "motif", "date_mouvement")
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

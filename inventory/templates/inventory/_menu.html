@@ -1,0 +1,20 @@
+{# Menu de navigation, partagé par la sidebar (desktop) et le menu déroulant (mobile).
+   Chaque lien n'apparaît que si l'utilisateur a la permission correspondante. #}
+{% if perms.inventory.acceder_tableau_bord %}
+    <a class="list-group-item list-group-item-action{% if section == 'tableau_bord' %} active{% endif %}"
+       href="{% url 'inventory:tableau_bord' %}">Tableau de bord</a>
+{% endif %}
+{% if perms.inventory.view_produit %}
+    <a class="list-group-item list-group-item-action{% if section == 'produits' %} active{% endif %}"
+       href="{% url 'inventory:produit_liste' %}">Produits</a>
+{% endif %}
+{% if perms.inventory.add_mouvement %}
+    <a class="list-group-item list-group-item-action{% if section == 'entree' %} active{% endif %}"
+       href="{% url 'inventory:entree_stock' %}">Entrée de stock</a>
+    <a class="list-group-item list-group-item-action{% if section == 'sortie' %} active{% endif %}"
+       href="{% url 'inventory:sortie_stock' %}">Sortie de stock</a>
+{% endif %}
+{% if perms.inventory.view_mouvement %}
+    <a class="list-group-item list-group-item-action{% if section == 'historique' %} active{% endif %}"
+       href="{% url 'inventory:mouvement_liste' %}">Historique</a>
+{% endif %}

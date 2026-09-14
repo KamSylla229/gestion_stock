@@ -1,0 +1,26 @@
+{{ nom_application }} — RAPPORT QUOTIDIEN
+Journee du {{ stats_jour.jour|date:"d/m/Y" }}
+
+ETAT DU STOCK
+-------------
+Produits actifs               : {{ kpis.produits_actifs }}
+Unites en stock               : {{ kpis.quantite_totale }}
+Valeur du stock (prix achat)  : {{ kpis.valeur_stock|floatformat:0 }}
+Produits en rupture           : {{ kpis.produits_en_rupture }}
+Produits sous seuil d'alerte  : {{ kpis.produits_en_alerte }}
+
+MOUVEMENTS DE LA JOURNEE
+------------------------
+Total des mouvements : {{ stats_jour.mouvements_nombre }}
+Entrees              : {{ stats_jour.entrees_nombre }} ({{ stats_jour.entrees_quantite }} unites)
+Sorties              : {{ stats_jour.sorties_nombre }} ({{ stats_jour.sorties_quantite }} unites)
+
+PRODUITS A REAPPROVISIONNER
+---------------------------
+{% if produits_en_alerte %}{% for produit in produits_en_alerte %}- {{ produit.nom }} ({{ produit.reference }}) : {{ produit.quantite_stock }} en stock / seuil {{ produit.seuil_alerte }}
+{% endfor %}{% else %}Aucun produit en alerte : tous les stocks sont au-dessus de leur seuil.
+{% endif %}{% if site_url %}
+Ouvrir StockFlow : {{ site_url }}
+{% endif %}
+--
+Email automatique envoye par {{ nom_application }}. Merci de ne pas y repondre.

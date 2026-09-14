@@ -1,13 +1,14 @@
 from django.contrib import messages
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
 from django.core.exceptions import ValidationError
 from django.db.models import F, Q
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils.dateparse import parse_date
-from django.views.generic import CreateView, DetailView, FormView, ListView, UpdateView
+from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView
 
-from inventory import services
+from inventory import exports, services, statistiques
 from inventory.forms import MouvementForm, ProduitForm
 from inventory.models import Categorie, Fournisseur, Mouvement, Produit
 
@@ -22,38 +23,86 @@ def querystring_sans_page(request):
     return parametres.urlencode()
 
 
-class ProduitListView(LoginRequiredMixin, ListView):
+def filtrer_produits(request):
+    """
+    Applique recherche et filtres aux produits, d'après les paramètres GET.
+
+    Partagé par la liste des produits et l'export Excel : l'export porte donc
+    exactement sur ce que l'utilisateur a à l'écran.
+    """
+    queryset = Produit.objects.select_related("categorie", "fournisseur")
+
+    recherche = request.GET.get("q", "").strip()
+    if recherche:
+        # Recherche simple sur le nom OU la référence.
+        queryset = queryset.filter(
+            Q(nom__icontains=recherche) | Q(reference__icontains=recherche)
+        )
+
+    categorie = request.GET.get("categorie", "")
+    if categorie.isdigit():
+        queryset = queryset.filter(categorie_id=categorie)
+
+    fournisseur = request.GET.get("fournisseur", "")
+    if fournisseur.isdigit():
+        queryset = queryset.filter(fournisseur_id=fournisseur)
+
+    actif = request.GET.get("actif", "")
+    if actif in ("1", "0"):
+        queryset = queryset.filter(actif=(actif == "1"))
+
+    if request.GET.get("stock_bas"):
+        # F() compare deux colonnes de la même ligne, côté base de données.
+        queryset = queryset.filter(quantite_stock__lte=F("seuil_alerte"))
+
+    return queryset
+
+
+class TableauBordView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+    """
+    Tableau de bord du gérant : 4 KPI, produits à réapprovisionner et
+    10 derniers mouvements. Réservé au groupe Gerant.
+    """
+
+    template_name = "inventory/tableau_bord.html"
+    permission_required = "inventory.acceder_tableau_bord"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte["kpis"] = statistiques.kpis_stock()
+        contexte["produits_en_alerte"] = statistiques.produits_en_alerte()
+        contexte["derniers_mouvements"] = statistiques.derniers_mouvements(10)
+        return contexte
+
+
+class ExportStockExcelView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+    """
+    Télécharge l'état du stock au format Excel, en respectant les filtres
+    éventuellement appliqués à la liste des produits. Réservé au groupe Gerant.
+    """
+
+    permission_required = "inventory.exporter_stock"
+
+    def get(self, request, *args, **kwargs):
+        produits = filtrer_produits(request).order_by("nom")
+        classeur = exports.generer_classeur_stock(produits)
+
+        reponse = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        reponse["Content-Disposition"] = f'attachment; filename="{exports.nom_fichier_export()}"'
+        classeur.save(reponse)  # écrit le classeur directement dans la réponse HTTP
+        return reponse
+
+
+class ProduitListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     model = Produit
     paginate_by = 20
     context_object_name = "produits"
+    permission_required = "inventory.view_produit"
 
     def get_queryset(self):
-        queryset = Produit.objects.select_related("categorie", "fournisseur")
-
-        recherche = self.request.GET.get("q", "").strip()
-        if recherche:
-            # Recherche simple sur le nom OU la référence.
-            queryset = queryset.filter(
-                Q(nom__icontains=recherche) | Q(reference__icontains=recherche)
-            )
-
-        categorie = self.request.GET.get("categorie", "")
-        if categorie.isdigit():
-            queryset = queryset.filter(categorie_id=categorie)
-
-        fournisseur = self.request.GET.get("fournisseur", "")
-        if fournisseur.isdigit():
-            queryset = queryset.filter(fournisseur_id=fournisseur)
-
-        actif = self.request.GET.get("actif", "")
-        if actif in ("1", "0"):
-            queryset = queryset.filter(actif=(actif == "1"))
-
-        if self.request.GET.get("stock_bas"):
-            # F() compare deux colonnes de la même ligne, côté base de données.
-            queryset = queryset.filter(quantite_stock__lte=F("seuil_alerte"))
-
-        return queryset
+        return filtrer_produits(self.request)
 
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
@@ -64,9 +113,10 @@ class ProduitListView(LoginRequiredMixin, ListView):
         return contexte
 
 
-class ProduitDetailView(LoginRequiredMixin, DetailView):
+class ProduitDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     model = Produit
     context_object_name = "produit"
+    permission_required = "inventory.view_produit"
 
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
@@ -75,21 +125,23 @@ class ProduitDetailView(LoginRequiredMixin, DetailView):
         return contexte
 
 
-class ProduitCreateView(LoginRequiredMixin, SuccessMessageMixin, CreateView):
+class ProduitCreateView(LoginRequiredMixin, PermissionRequiredMixin, SuccessMessageMixin, CreateView):
     model = Produit
     form_class = ProduitForm
     success_message = "Produit « %(nom)s » créé avec succès."
     extra_context = {"titre": "Nouveau produit"}
+    permission_required = "inventory.add_produit"
 
 
-class ProduitUpdateView(LoginRequiredMixin, SuccessMessageMixin, UpdateView):
+class ProduitUpdateView(LoginRequiredMixin, PermissionRequiredMixin, SuccessMessageMixin, UpdateView):
     model = Produit
     form_class = ProduitForm
     success_message = "Produit « %(nom)s » modifié avec succès."
     extra_context = {"titre": "Modifier le produit"}
+    permission_required = "inventory.change_produit"
 
 
-class MouvementCreateView(LoginRequiredMixin, FormView):
+class MouvementCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
     """
     Vue de base pour l'entrée et la sortie de stock.
 
@@ -100,6 +152,7 @@ class MouvementCreateView(LoginRequiredMixin, FormView):
 
     template_name = "inventory/mouvement_form.html"
     form_class = MouvementForm
+    permission_required = "inventory.add_mouvement"
     type_mouvement = None
     titre = ""
 
@@ -149,12 +202,13 @@ class SortieStockView(MouvementCreateView):
     titre = "Sortie de stock"
 
 
-class MouvementListView(LoginRequiredMixin, ListView):
+class MouvementListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """Historique des mouvements, filtrable par produit, type et période."""
 
     model = Mouvement
     paginate_by = 20
     context_object_name = "mouvements"
+    permission_required = "inventory.view_mouvement"
 
     def get_queryset(self):
         queryset = Mouvement.objects.select_related("produit")

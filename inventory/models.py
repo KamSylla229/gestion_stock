@@ -67,6 +67,12 @@ class Produit(models.Model):
         verbose_name = "Produit"
         verbose_name_plural = "Produits"
         ordering = ["nom"]
+        # Permissions métier, en plus des add/change/delete/view générés par Django.
+        # Elles protègent les fonctionnalités réservées au gérant.
+        permissions = [
+            ("acceder_tableau_bord", "Peut accéder au tableau de bord"),
+            ("exporter_stock", "Peut exporter les données de stock"),
+        ]
 
     def __str__(self):
         return f"{self.reference} — {self.nom}"
@@ -108,7 +114,9 @@ class Mouvement(models.Model):
     class Meta:
         verbose_name = "Mouvement"
         verbose_name_plural = "Mouvements"
-        ordering = ["-date_mouvement"]
+        # -id départage les mouvements enregistrés dans la même fraction de
+        # seconde : sans lui, leur ordre d'affichage serait indéterminé.
+        ordering = ["-date_mouvement", "-id"]
 
     def __str__(self):
         return f"{self.get_type_mouvement_display()} de {self.quantite} — {self.produit.nom}"

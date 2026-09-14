@@ -6,33 +6,39 @@
 <h1 class="h4 mb-3">{{ titre }}</h1>
 
 <div class="row">
-    <div class="col-md-6">
-        <form method="post">
-            {% csrf_token %}
+    <div class="col-12 col-md-8 col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
 
-            {% if form.non_field_errors %}
-                <div class="alert alert-danger">
-                    {% for erreur in form.non_field_errors %}{{ erreur }}{% endfor %}
-                </div>
-            {% endif %}
-
-            {% for champ in form %}
-                <div class="mb-3">
-                    <label for="{{ champ.id_for_label }}" class="form-label">{{ champ.label }}</label>
-                    {{ champ }}
-                    {% if champ.errors %}
-                        <div class="text-danger small">{{ champ.errors|striptags }}</div>
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger" role="alert">
+                            {% for erreur in form.non_field_errors %}{{ erreur }}{% endfor %}
+                        </div>
                     {% endif %}
-                </div>
-            {% endfor %}
 
-            {% if type_mouvement == "ENTREE" %}
-                <button type="submit" class="btn btn-success">Enregistrer l'entrée</button>
-            {% else %}
-                <button type="submit" class="btn btn-danger">Enregistrer la sortie</button>
-            {% endif %}
-            <a href="{% url 'inventory:produit_liste' %}" class="btn btn-link">Annuler</a>
-        </form>
+                    {% for champ in form %}
+                        <div class="mb-3">
+                            <label for="{{ champ.id_for_label }}" class="form-label">{{ champ.label }}</label>
+                            {{ champ }}
+                            {% if champ.errors %}
+                                <div class="text-danger small mt-1">{{ champ.errors|striptags }}</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+
+                    <div class="d-flex flex-wrap gap-2">
+                        {% if type_mouvement == "ENTREE" %}
+                            <button type="submit" class="btn btn-success">Enregistrer l'entrée</button>
+                        {% else %}
+                            <button type="submit" class="btn btn-danger">Enregistrer la sortie</button>
+                        {% endif %}
+                        <a href="{% url 'inventory:produit_liste' %}" class="btn btn-outline-secondary">Annuler</a>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

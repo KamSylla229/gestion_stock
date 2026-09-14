@@ -32,6 +32,12 @@ DEBUG = env.bool('DEBUG', default=False)
 
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
 
+# Domaines autorisés à envoyer des formulaires (obligatoire derrière HTTPS en prod).
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
+
+# URL publique de l'application, utilisée pour les liens dans les emails.
+SITE_URL = env('SITE_URL', default='')
+
 
 # Application definition
 
@@ -47,6 +53,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # AVANT DÉPLOIEMENT : installer whitenoise (pip install whitenoise) puis
+    # décommenter la ligne ci-dessous, juste après SecurityMiddleware.
+    # 'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -118,23 +127,50 @@ USE_I18N = True
 
 USE_TZ = True
 
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-EMAIL_HOST = env('EMAIL_HOST')
-EMAIL_PORT = env.int('EMAIL_PORT')
+# Email
+# En développement, le backend console affiche les emails dans le terminal.
+# Pour un envoi réel (SMTP, Brevo...), définir EMAIL_BACKEND dans le .env :
+#   EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = env('EMAIL_HOST', default='localhost')
+EMAIL_PORT = env.int('EMAIL_PORT', default=25)
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=False)
 EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
-DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL')
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='stockflow@localhost')
 
-# Adresse qui recevra les alertes de stock bas (utilisée plus tard, hors périmètre de cette semaine)
-ALERTE_EMAIL_DESTINATAIRE = env('ALERTE_EMAIL_DESTINATAIRE')
+# Adresse du gérant : reçoit les alertes de stock bas et le rapport quotidien.
+ALERTE_EMAIL_DESTINATAIRE = env('ALERTE_EMAIL_DESTINATAIRE', default='')
 
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# AVANT DÉPLOIEMENT : une fois whitenoise installé, ajouter ici
+#   STORAGES = {
+#       'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+#       'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'},
+#   }
+# pour servir les fichiers statiques compressés et versionnés en production.
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# Sécurité renforcée dès que DEBUG est désactivé (production).
+# En développement local (DEBUG=True), rien ne change : pas de HTTPS exigé.
+if not DEBUG:
+    SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=True)
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=31536000)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    # Render et la plupart des hébergeurs terminent le TLS en amont.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

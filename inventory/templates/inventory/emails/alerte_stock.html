@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Alerte de stock — {{ nom_application }}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f4f5f7; font-family:Arial,Helvetica,sans-serif; color:#212529;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7; padding:16px 0;">
+    <tr>
+        <td align="center">
+            <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+                   style="width:100%; max-width:600px; background-color:#ffffff; border-radius:6px; overflow:hidden;">
+
+                <tr>
+                    <td style="background-color:#212529; padding:16px 24px;">
+                        <span style="color:#ffffff; font-size:18px; font-weight:bold;">{{ nom_application }}</span>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="padding:24px;">
+                        <h1 style="margin:0 0 8px 0; font-size:20px; color:#212529;">Alerte de stock</h1>
+
+                        {% if niveau == "RUPTURE" %}
+                            <p style="margin:0 0 16px 0;">
+                                <span style="display:inline-block; background-color:#dc3545; color:#ffffff; padding:4px 10px; border-radius:4px; font-size:12px; font-weight:bold;">RUPTURE DE STOCK</span>
+                            </p>
+                            <p style="margin:0 0 16px 0; font-size:14px; line-height:1.5;">
+                                Le produit ci-dessous n'a <strong>plus aucune unité en stock</strong>.
+                                Un réapprovisionnement est nécessaire immédiatement.
+                            </p>
+                        {% else %}
+                            <p style="margin:0 0 16px 0;">
+                                <span style="display:inline-block; background-color:#fd7e14; color:#ffffff; padding:4px 10px; border-radius:4px; font-size:12px; font-weight:bold;">STOCK CRITIQUE</span>
+                            </p>
+                            <p style="margin:0 0 16px 0; font-size:14px; line-height:1.5;">
+                                Le produit ci-dessous vient de passer <strong>au niveau ou en dessous de son seuil d'alerte</strong>
+                                suite à une sortie de stock.
+                            </p>
+                        {% endif %}
+
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                               style="border-collapse:collapse; font-size:14px; margin-bottom:24px;">
+                            <tr>
+                                <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold; width:45%;">Produit</td>
+                                <td style="padding:10px 12px; border:1px solid #dee2e6;">{{ produit.nom }}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold;">Référence</td>
+                                <td style="padding:10px 12px; border:1px solid #dee2e6;">{{ produit.reference }}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold;">Stock avant la sortie</td>
+                                <td style="padding:10px 12px; border:1px solid #dee2e6;">{{ stock_avant }}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold;">Quantité sortie</td>
+                                <td style="padding:10px 12px; border:1px solid #dee2e6;">- {{ quantite_sortie }}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold;">Stock actuel</td>
+                                <td style="padding:10px 12px; border:1px solid #dee2e6; font-weight:bold; color:{% if niveau == 'RUPTURE' %}#dc3545{% else %}#fd7e14{% endif %};">{{ stock_apres }}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold;">Seuil d'alerte</td>
+                                <td style="padding:10px 12px; border:1px solid #dee2e6;">{{ seuil_alerte }}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold;">Date de l'alerte</td>
+                                <td style="padding:10px 12px; border:1px solid #dee2e6;">{{ date_alerte|date:"d/m/Y à H:i" }}</td>
+                            </tr>
+                        </table>
+
+                        {% if site_url %}
+                            <p style="margin:0;">
+                                <a href="{{ site_url }}{{ produit.get_absolute_url }}"
+                                   style="display:inline-block; background-color:#0d6efd; color:#ffffff; text-decoration:none; padding:12px 20px; border-radius:4px; font-size:14px; font-weight:bold;">
+                                    Voir la fiche produit
+                                </a>
+                            </p>
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="background-color:#f8f9fa; padding:16px 24px; border-top:1px solid #dee2e6; font-size:12px; color:#6c757d;">
+                        Email automatique envoyé par {{ nom_application }}. Merci de ne pas y répondre.
+                    </td>
+                </tr>
+
+            </table>
+        </td>
+    </tr>
+</table>
+</body>
+</html>
