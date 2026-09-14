@@ -1,22 +1,38 @@
 {% comment %}
-Menu de navigation, partagé par la sidebar (desktop) et le menu déroulant (mobile).
+Navigation, partagée par la sidebar desktop et le panneau mobile.
 Chaque lien n'apparaît que si l'utilisateur a la permission correspondante.
+La variable `section`, définie par chaque page, met le lien courant en actif.
 {% endcomment %}
-{% if perms.inventory.acceder_tableau_bord %}
-    <a class="list-group-item list-group-item-action{% if section == 'tableau_bord' %} active{% endif %}"
-       href="{% url 'inventory:tableau_bord' %}">Tableau de bord</a>
-{% endif %}
-{% if perms.inventory.view_produit %}
-    <a class="list-group-item list-group-item-action{% if section == 'produits' %} active{% endif %}"
-       href="{% url 'inventory:produit_liste' %}">Produits</a>
-{% endif %}
-{% if perms.inventory.add_mouvement %}
-    <a class="list-group-item list-group-item-action{% if section == 'entree' %} active{% endif %}"
-       href="{% url 'inventory:entree_stock' %}">Entrée de stock</a>
-    <a class="list-group-item list-group-item-action{% if section == 'sortie' %} active{% endif %}"
-       href="{% url 'inventory:sortie_stock' %}">Sortie de stock</a>
-{% endif %}
-{% if perms.inventory.view_mouvement %}
-    <a class="list-group-item list-group-item-action{% if section == 'historique' %} active{% endif %}"
-       href="{% url 'inventory:mouvement_liste' %}">Historique</a>
-{% endif %}
+<nav class="sf-nav">
+    {% if perms.inventory.acceder_tableau_bord %}
+        <a class="sf-nav-lien{% if section == 'tableau_bord' %} actif{% endif %}" href="{% url 'inventory:tableau_bord' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="11" width="7" height="10" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
+            Tableau de bord
+        </a>
+    {% endif %}
+
+    {% if perms.inventory.view_produit %}
+        <a class="sf-nav-lien{% if section == 'produits' %} actif{% endif %}" href="{% url 'inventory:produit_liste' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg>
+            Produits
+        </a>
+    {% endif %}
+
+    {% if perms.inventory.add_mouvement %}
+        <a class="sf-nav-lien{% if section == 'entree' %} actif{% endif %}" href="{% url 'inventory:entree_stock' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+            Entrées
+        </a>
+        <a class="sf-nav-lien{% if section == 'sortie' %} actif{% endif %}" href="{% url 'inventory:sortie_stock' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
+            Sorties
+        </a>
+    {% endif %}
+
+    {% if perms.inventory.view_mouvement %}
+        <a class="sf-nav-lien{% if section == 'historique' %} actif{% endif %}" href="{% url 'inventory:mouvement_liste' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            Historique
+        </a>
+    {% endif %}
+</nav>

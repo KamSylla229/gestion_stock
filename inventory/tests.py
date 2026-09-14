@@ -891,3 +891,62 @@ class TemplatesTests(BaseApplicationTestCase):
         contenu = self.client.get(reverse("inventory:connexion")).content.decode()
         for marqueur in ("{#", "#}", "{%", "%}", "{{", "}}"):
             self.assertNotIn(marqueur, contenu)
+
+
+class ValeurParCategorieTests(BaseApplicationTestCase):
+    """Ventilation de la valeur du stock par categorie (tableau de bord)."""
+
+    def setUp(self):
+        self.gerant = creer_utilisateur("gerant", groupe="Gerant")
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+
+        self.alimentation = Categorie.objects.create(nom="Alimentation")
+        self.boissons = Categorie.objects.create(nom="Boissons")
+        Categorie.objects.create(nom="Categorie vide")
+
+        # 10 x 1000 = 10 000
+        Produit.objects.create(
+            reference="VC-001", nom="Riz", categorie=self.alimentation,
+            prix_achat=Decimal("1000.00"), prix_vente=Decimal("1500.00"), quantite_stock=10,
+        )
+        # 4 x 500 = 2 000
+        Produit.objects.create(
+            reference="VC-002", nom="Jus", categorie=self.boissons,
+            prix_achat=Decimal("500.00"), prix_vente=Decimal("800.00"), quantite_stock=4,
+        )
+        # Produit desactive : ne doit pas compter
+        Produit.objects.create(
+            reference="VC-003", nom="Ancien", categorie=self.boissons,
+            prix_achat=Decimal("9999.00"), prix_vente=Decimal("9999.00"),
+            quantite_stock=50, actif=False,
+        )
+
+    def test_valeurs_et_ordre(self):
+        categories = statistiques.valeur_par_categorie()
+
+        self.assertEqual([c.nom for c in categories], ["Alimentation", "Boissons"])
+        self.assertEqual(categories[0].valeur, Decimal("10000.00"))
+        self.assertEqual(categories[1].valeur, Decimal("2000.00"))
+
+    def test_categorie_sans_stock_exclue(self):
+        noms = [c.nom for c in statistiques.valeur_par_categorie()]
+        self.assertNotIn("Categorie vide", noms)
+
+    def test_pourcentages_relatifs_au_maximum(self):
+        categories = statistiques.valeur_par_categorie()
+
+        self.assertEqual(categories[0].pourcentage, 100)
+        self.assertEqual(categories[1].pourcentage, 20)  # 2000 / 10000
+
+    def test_affichage_sur_le_tableau_de_bord(self):
+        reponse = self.client.get(reverse("inventory:tableau_bord"))
+
+        self.assertEqual(reponse.status_code, 200)
+        self.assertContains(reponse, "Valeur du stock par catégorie")
+        self.assertContains(reponse, "Alimentation")
+
+    def test_etat_vide_sans_aucun_stock(self):
+        Produit.objects.all().update(quantite_stock=0)
+
+        reponse = self.client.get(reverse("inventory:tableau_bord"))
+        self.assertContains(reponse, "Aucune valeur à afficher")

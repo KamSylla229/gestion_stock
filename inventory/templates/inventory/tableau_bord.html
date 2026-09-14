@@ -3,172 +3,171 @@
 {% block titre %}Tableau de bord — StockFlow{% endblock %}
 
 {% block contenu %}
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
-    <h1 class="h4 mb-0">Tableau de bord</h1>
+<div class="sf-entete">
+    <div>
+        <h1 class="sf-titre">Tableau de bord</h1>
+        <p class="sf-sous-titre">
+            {% now "l j F Y" %} · {{ kpis.produits_actifs }} référence{{ kpis.produits_actifs|pluralize }} active{{ kpis.produits_actifs|pluralize }}
+        </p>
+    </div>
     {% if perms.inventory.exporter_stock %}
-        <a href="{% url 'inventory:export_stock_excel' %}" class="btn btn-outline-dark">
-            Exporter le stock (Excel)
+        <a href="{% url 'inventory:export_stock_excel' %}" class="btn sf-btn-principal">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+            Exporter
         </a>
     {% endif %}
 </div>
 
-{# ---------- 4 KPI ---------- #}
-<div class="row g-3 mb-4">
+{# ---------- Les 4 indicateurs ---------- #}
+<div class="row g-3 mb-3">
     <div class="col-12 col-sm-6 col-xl-3">
-        <div class="card h-100 border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-uppercase text-muted small fw-semibold mb-1">Produits actifs</div>
-                <div class="fs-3 fw-bold">{{ kpis.produits_actifs }}</div>
-                <div class="text-muted small">{{ kpis.quantite_totale }} unités en stock</div>
-            </div>
+        <div class="sf-kpi">
+            <div class="sf-kpi-label">Références actives</div>
+            <div class="sf-kpi-valeur">{{ kpis.produits_actifs }}</div>
+            <div class="sf-kpi-note">{{ kpis.quantite_totale }} unités en stock</div>
         </div>
     </div>
 
     <div class="col-12 col-sm-6 col-xl-3">
-        <div class="card h-100 border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-uppercase text-muted small fw-semibold mb-1">Valeur du stock</div>
-                <div class="fs-3 fw-bold">{{ kpis.valeur_stock|floatformat:0 }}</div>
-                <div class="text-muted small">au prix d'achat</div>
-            </div>
+        <div class="sf-kpi sf-kpi-vedette">
+            <div class="sf-kpi-label">Valeur du stock</div>
+            <div class="sf-kpi-valeur">{{ kpis.valeur_stock|floatformat:0 }}<span class="sf-unite">F</span></div>
+            <div class="sf-kpi-note">au prix d'achat</div>
         </div>
     </div>
 
     <div class="col-12 col-sm-6 col-xl-3">
-        <div class="card h-100 border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-uppercase text-muted small fw-semibold mb-1">À réapprovisionner</div>
-                <div class="fs-3 fw-bold {% if kpis.produits_en_alerte %}text-danger{% endif %}">
-                    {{ kpis.produits_en_alerte }}
-                </div>
-                <div class="text-muted small">dont {{ kpis.produits_en_rupture }} en rupture</div>
-            </div>
+        <div class="sf-kpi">
+            <div class="sf-kpi-label">En alerte</div>
+            <div class="sf-kpi-valeur {% if kpis.produits_en_alerte %}sf-alerte{% endif %}">{{ kpis.produits_en_alerte }}</div>
+            <div class="sf-kpi-note">dont {{ kpis.produits_en_rupture }} en rupture totale</div>
         </div>
     </div>
 
     <div class="col-12 col-sm-6 col-xl-3">
-        <div class="card h-100 border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-uppercase text-muted small fw-semibold mb-1">Activité récente</div>
-                <div class="fs-3 fw-bold">{{ kpis.mouvements_recents }}</div>
-                <div class="text-muted small">mouvements sur {{ kpis.jours_activite }} jours</div>
-            </div>
+        <div class="sf-kpi">
+            <div class="sf-kpi-label">Activité récente</div>
+            <div class="sf-kpi-valeur">{{ kpis.mouvements_recents }}</div>
+            <div class="sf-kpi-note">mouvements sur {{ kpis.jours_activite }} jours</div>
         </div>
     </div>
 </div>
 
-<div class="row g-4">
+<div class="row g-3 mb-3">
+
+    {# ---------- Valeur par catégorie ---------- #}
+    <div class="col-12 col-xl-7">
+        <div class="sf-carte h-100">
+            <div class="sf-carte-entete">
+                <span>Valeur du stock par catégorie</span>
+                <span class="sf-kpi-note m-0">au prix d'achat</span>
+            </div>
+            <div class="sf-carte-corps">
+                {% for categorie in valeur_par_categorie %}
+                    <div class="sf-ligne-barre">
+                        <div class="d-flex justify-content-between align-items-baseline">
+                            <span style="font-size:13.5px;">{{ categorie.nom }}</span>
+                            <span class="sf-chiffre" style="font-size:13px;">{{ categorie.valeur|floatformat:0 }} F</span>
+                        </div>
+                        <div class="sf-barre-piste">
+                            <div class="sf-barre-remplissage" style="width: {{ categorie.pourcentage }}%;"></div>
+                        </div>
+                    </div>
+                {% empty %}
+                    <div class="sf-vide">
+                        <div class="sf-vide-titre">Aucune valeur à afficher</div>
+                        <p class="mb-0">Les catégories apparaîtront dès que des produits auront du stock.</p>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
 
     {# ---------- Produits en alerte ---------- #}
-    <div class="col-12 col-xl-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <span class="fw-semibold">Produits à réapprovisionner</span>
-                {% if produits_en_alerte %}
-                    <span class="badge bg-danger">{{ produits_en_alerte|length }}</span>
+    <div class="col-12 col-xl-5">
+        <div class="sf-carte h-100">
+            <div class="sf-carte-entete">
+                <span>Produits en alerte</span>
+                {% if perms.inventory.view_produit %}
+                    <a href="{% url 'inventory:produit_liste' %}?stock_bas=1" class="sf-kpi-note m-0 text-decoration-none">Tout voir</a>
                 {% endif %}
             </div>
-            <div class="card-body p-0">
-                {% if produits_en_alerte %}
-                    <div class="table-responsive">
-                        <table class="table table-sm mb-0 align-middle">
-                            <thead class="table-light">
+            {% if produits_en_alerte %}
+                <div class="table-responsive">
+                    <table class="sf-table">
+                        <tbody>
+                            {% for produit in produits_en_alerte %}
                                 <tr>
-                                    <th>Produit</th>
-                                    <th class="text-end">Stock</th>
-                                    <th class="text-end">Seuil</th>
-                                    <th>Statut</th>
+                                    <td>
+                                        <a href="{{ produit.get_absolute_url }}">{{ produit.nom }}</a>
+                                        <div class="sf-ref">{{ produit.reference }} · seuil {{ produit.seuil_alerte }}</div>
+                                    </td>
+                                    <td class="text-end">
+                                        {% if produit.quantite_stock == 0 %}
+                                            <span class="sf-badge sf-badge-rouge">Rupture</span>
+                                        {% else %}
+                                            <span class="sf-badge sf-badge-ambre">{{ produit.quantite_stock }} en stock</span>
+                                        {% endif %}
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {% for produit in produits_en_alerte %}
-                                    <tr>
-                                        <td>
-                                            <a href="{{ produit.get_absolute_url }}" class="text-decoration-none">
-                                                {{ produit.nom }}
-                                            </a>
-                                            <div class="text-muted small">{{ produit.categorie.nom }}</div>
-                                        </td>
-                                        <td class="text-end fw-semibold">{{ produit.quantite_stock }}</td>
-                                        <td class="text-end text-muted">{{ produit.seuil_alerte }}</td>
-                                        <td>
-                                            {% if produit.quantite_stock == 0 %}
-                                                <span class="badge bg-danger">Rupture</span>
-                                            {% else %}
-                                                <span class="badge bg-warning text-dark">Sous seuil</span>
-                                            {% endif %}
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                {% else %}
-                    <div class="text-center text-muted py-5 px-3">
-                        <div class="fs-1 mb-2">✅</div>
-                        <p class="mb-1 fw-semibold">Aucun produit en alerte</p>
-                        <p class="small mb-0">Tous les stocks sont au-dessus de leur seuil.</p>
-                    </div>
-                {% endif %}
-            </div>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="sf-vide">
+                    <div class="sf-vide-titre">Aucun produit en alerte</div>
+                    <p class="mb-0">Tous les stocks sont au-dessus de leur seuil.</p>
+                </div>
+            {% endif %}
         </div>
     </div>
+</div>
 
-    {# ---------- 10 derniers mouvements ---------- #}
-    <div class="col-12 col-xl-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <span class="fw-semibold">10 derniers mouvements</span>
-                {% if perms.inventory.view_mouvement %}
-                    <a href="{% url 'inventory:mouvement_liste' %}" class="small text-decoration-none">
-                        Tout l'historique
-                    </a>
-                {% endif %}
-            </div>
-            <div class="card-body p-0">
-                {% if derniers_mouvements %}
-                    <div class="table-responsive">
-                        <table class="table table-sm mb-0 align-middle">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Produit</th>
-                                    <th>Type</th>
-                                    <th class="text-end">Qté</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for mouvement in derniers_mouvements %}
-                                    <tr>
-                                        <td class="text-nowrap small">{{ mouvement.date_mouvement|date:"d/m H:i" }}</td>
-                                        <td>
-                                            <a href="{{ mouvement.produit.get_absolute_url }}" class="text-decoration-none">
-                                                {{ mouvement.produit.nom }}
-                                            </a>
-                                        </td>
-                                        <td>
-                                            {% if mouvement.type_mouvement == "ENTREE" %}
-                                                <span class="badge bg-success">Entrée</span>
-                                            {% else %}
-                                                <span class="badge bg-danger">Sortie</span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="text-end fw-semibold">{{ mouvement.quantite }}</td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                {% else %}
-                    <div class="text-center text-muted py-5 px-3">
-                        <div class="fs-1 mb-2">📋</div>
-                        <p class="mb-1 fw-semibold">Aucun mouvement enregistré</p>
-                        <p class="small mb-0">Les entrées et sorties de stock apparaîtront ici.</p>
-                    </div>
-                {% endif %}
-            </div>
-        </div>
+{# ---------- 10 derniers mouvements ---------- #}
+<div class="sf-carte">
+    <div class="sf-carte-entete">
+        <span>10 derniers mouvements</span>
+        {% if perms.inventory.view_mouvement %}
+            <a href="{% url 'inventory:mouvement_liste' %}" class="sf-kpi-note m-0 text-decoration-none">Historique complet</a>
+        {% endif %}
     </div>
-
+    {% if derniers_mouvements %}
+        <div class="table-responsive">
+            <table class="sf-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Produit</th>
+                        <th>Type</th>
+                        <th class="text-end sf-num">Quantité</th>
+                        <th>Motif</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for mouvement in derniers_mouvements %}
+                        <tr>
+                            <td class="sf-num text-nowrap">{{ mouvement.date_mouvement|date:"d/m · H:i" }}</td>
+                            <td><a href="{{ mouvement.produit.get_absolute_url }}">{{ mouvement.produit.nom }}</a></td>
+                            <td>
+                                {% if mouvement.type_mouvement == "ENTREE" %}
+                                    <span class="sf-badge sf-badge-vert">Entrée</span>
+                                {% else %}
+                                    <span class="sf-badge sf-badge-rouge">Sortie</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end sf-num fw-semibold">{{ mouvement.quantite }}</td>
+                            <td class="text-secondary">{{ mouvement.motif|default:"—" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="sf-vide">
+            <div class="sf-vide-titre">Aucun mouvement enregistré</div>
+            <p class="mb-0">Les entrées et sorties de stock apparaîtront ici.</p>
+        </div>
+    {% endif %}
 </div>
 {% endblock %}

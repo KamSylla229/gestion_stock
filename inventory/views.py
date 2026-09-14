@@ -70,8 +70,10 @@ class TableauBordView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView)
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
         contexte["kpis"] = statistiques.kpis_stock()
+        contexte["valeur_par_categorie"] = statistiques.valeur_par_categorie()
         contexte["produits_en_alerte"] = statistiques.produits_en_alerte()
         contexte["derniers_mouvements"] = statistiques.derniers_mouvements(10)
+        contexte["section"] = "tableau_bord"
         return contexte
 
 
@@ -100,6 +102,7 @@ class ProduitListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     paginate_by = 20
     context_object_name = "produits"
     permission_required = "inventory.view_produit"
+    extra_context = {"section": "produits"}
 
     def get_queryset(self):
         return filtrer_produits(self.request)
@@ -117,11 +120,16 @@ class ProduitDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
     model = Produit
     context_object_name = "produit"
     permission_required = "inventory.view_produit"
+    extra_context = {"section": "produits"}
 
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
-        # Mouvement.Meta.ordering = ["-date_mouvement"] : les plus récents d'abord.
-        contexte["mouvements"] = self.object.mouvements.all()[:20]
+        # Mouvement.Meta.ordering = ["-date_mouvement", "-id"] : les plus récents d'abord.
+        mouvements = list(self.object.mouvements.all()[:20])
+        contexte["mouvements"] = mouvements
+        contexte["dernier_mouvement"] = mouvements[0] if mouvements else None
+        contexte["valeur_immobilisee"] = self.object.quantite_stock * self.object.prix_achat
+        contexte["marge_unitaire"] = self.object.prix_vente - self.object.prix_achat
         return contexte
 
 
@@ -129,7 +137,7 @@ class ProduitCreateView(LoginRequiredMixin, PermissionRequiredMixin, SuccessMess
     model = Produit
     form_class = ProduitForm
     success_message = "Produit « %(nom)s » créé avec succès."
-    extra_context = {"titre": "Nouveau produit"}
+    extra_context = {"titre": "Nouveau produit", "section": "produits"}
     permission_required = "inventory.add_produit"
 
 
@@ -137,7 +145,7 @@ class ProduitUpdateView(LoginRequiredMixin, PermissionRequiredMixin, SuccessMess
     model = Produit
     form_class = ProduitForm
     success_message = "Produit « %(nom)s » modifié avec succès."
-    extra_context = {"titre": "Modifier le produit"}
+    extra_context = {"titre": "Modifier le produit", "section": "produits"}
     permission_required = "inventory.change_produit"
 
 
@@ -155,6 +163,7 @@ class MouvementCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView)
     permission_required = "inventory.add_mouvement"
     type_mouvement = None
     titre = ""
+    section = ""
 
     def get_initial(self):
         initial = super().get_initial()
@@ -168,7 +177,21 @@ class MouvementCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView)
         contexte = super().get_context_data(**kwargs)
         contexte["titre"] = self.titre
         contexte["type_mouvement"] = self.type_mouvement
+        contexte["section"] = self.section
+
+        # Panneau latéral : état du stock du produit choisi, s'il y en a un.
+        produit = self._produit_selectionne()
+        contexte["produit_selectionne"] = produit
+        if produit:
+            contexte["valeur_stock_selectionne"] = produit.quantite_stock * produit.prix_achat
         return contexte
+
+    def _produit_selectionne(self):
+        """Produit issu du formulaire soumis, ou de l'URL (?produit=...)."""
+        identifiant = self.request.POST.get("produit") or self.request.GET.get("produit", "")
+        if not str(identifiant).isdigit():
+            return None
+        return Produit.objects.filter(pk=identifiant).first()
 
     def form_valid(self, form):
         produit = form.cleaned_data["produit"]
@@ -195,11 +218,13 @@ class MouvementCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView)
 class EntreeStockView(MouvementCreateView):
     type_mouvement = Mouvement.ENTREE
     titre = "Entrée de stock"
+    section = "entree"
 
 
 class SortieStockView(MouvementCreateView):
     type_mouvement = Mouvement.SORTIE
     titre = "Sortie de stock"
+    section = "sortie"
 
 
 class MouvementListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
@@ -209,6 +234,7 @@ class MouvementListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     paginate_by = 20
     context_object_name = "mouvements"
     permission_required = "inventory.view_mouvement"
+    extra_context = {"section": "historique"}
 
     def get_queryset(self):
         queryset = Mouvement.objects.select_related("produit")

@@ -3,12 +3,25 @@
 {% block titre %}Historique — StockFlow{% endblock %}
 
 {% block contenu %}
-<h1 class="h4 mb-3">Historique des mouvements</h1>
+<div class="sf-entete">
+    <div>
+        <h1 class="sf-titre">Historique des mouvements</h1>
+        <p class="sf-sous-titre">
+            {{ page_obj.paginator.count }} mouvement{{ page_obj.paginator.count|pluralize }} enregistré{{ page_obj.paginator.count|pluralize }} · aucune suppression possible
+        </p>
+    </div>
+    {% if perms.inventory.exporter_stock %}
+        <a href="{% url 'inventory:export_stock_excel' %}" class="btn sf-btn-secondaire">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+            Exporter le stock
+        </a>
+    {% endif %}
+</div>
 
-<div class="card border-0 shadow-sm mb-3">
-    <div class="card-body">
-        <form method="get" class="row g-2">
-            <div class="col-12 col-md-4 col-xl-3">
+<div class="sf-carte mb-3">
+    <div class="sf-carte-corps">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-12 col-lg-4">
                 <select name="produit" class="form-select" aria-label="Produit">
                     <option value="">Tous les produits</option>
                     {% for produit in produits %}
@@ -16,7 +29,7 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-6 col-md-4 col-xl-2">
+            <div class="col-6 col-lg-2">
                 <select name="type" class="form-select" aria-label="Type de mouvement">
                     <option value="">Tous les types</option>
                     {% for valeur, libelle in types_mouvement %}
@@ -24,84 +37,88 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-6 col-md-4 col-xl-2">
+            <div class="col-6 col-lg-2">
                 <input type="date" name="date_debut" class="form-control" aria-label="Date de début"
                        value="{{ filtres.date_debut|default:'' }}">
             </div>
-            <div class="col-6 col-md-4 col-xl-2">
+            <div class="col-6 col-lg-2">
                 <input type="date" name="date_fin" class="form-control" aria-label="Date de fin"
                        value="{{ filtres.date_fin|default:'' }}">
             </div>
-            <div class="col-6 col-md-4 col-xl-2 d-flex gap-2">
-                <button type="submit" class="btn btn-secondary flex-grow-1">Filtrer</button>
-                <a href="{% url 'inventory:mouvement_liste' %}" class="btn btn-outline-secondary">Effacer</a>
+            <div class="col-6 col-lg-2 d-flex gap-2">
+                <button type="submit" class="btn sf-btn-principal flex-grow-1">Appliquer</button>
+                <a href="{% url 'inventory:mouvement_liste' %}" class="btn sf-btn-secondaire">Effacer</a>
             </div>
         </form>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm">
-    <div class="card-body p-0">
-        {% if mouvements %}
-            <div class="table-responsive">
-                <table class="table table-striped table-sm align-middle mb-0">
-                    <thead class="table-light">
+<div class="sf-carte">
+    {% if mouvements %}
+        <div class="table-responsive">
+            <table class="sf-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Produit</th>
+                        <th>Type</th>
+                        <th class="text-end sf-num">Quantité</th>
+                        <th class="text-end sf-num">Stock actuel</th>
+                        <th>Motif</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for mouvement in mouvements %}
                         <tr>
-                            <th>Date</th>
-                            <th>Produit</th>
-                            <th>Type</th>
-                            <th class="text-end">Quantité</th>
-                            <th>Motif</th>
+                            <td class="sf-num text-nowrap">{{ mouvement.date_mouvement|date:"d/m · H:i" }}</td>
+                            <td>
+                                <a href="{{ mouvement.produit.get_absolute_url }}">{{ mouvement.produit.nom }}</a>
+                                <div class="sf-ref">{{ mouvement.produit.reference }}</div>
+                            </td>
+                            <td>
+                                {% if mouvement.type_mouvement == "ENTREE" %}
+                                    <span class="sf-badge sf-badge-vert">Entrée</span>
+                                {% else %}
+                                    <span class="sf-badge sf-badge-rouge">Sortie</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end sf-num fw-semibold">{{ mouvement.quantite }}</td>
+                            <td class="text-end sf-num text-secondary">{{ mouvement.produit.quantite_stock }}</td>
+                            <td class="text-secondary">{{ mouvement.motif|default:"—" }}</td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        {% for mouvement in mouvements %}
-                            <tr>
-                                <td class="text-nowrap small">{{ mouvement.date_mouvement|date:"d/m/Y H:i" }}</td>
-                                <td><a href="{{ mouvement.produit.get_absolute_url }}" class="text-decoration-none">{{ mouvement.produit.nom }}</a></td>
-                                <td>
-                                    {% if mouvement.type_mouvement == "ENTREE" %}
-                                        <span class="badge bg-success">Entrée</span>
-                                    {% else %}
-                                        <span class="badge bg-danger">Sortie</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-end fw-semibold">{{ mouvement.quantite }}</td>
-                                <td class="small">{{ mouvement.motif|default:"—" }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <div class="text-center text-muted py-5 px-3">
-                <div class="fs-1 mb-2">📋</div>
-                {% if filtres.produit or filtres.type or filtres.date_debut or filtres.date_fin %}
-                    <p class="mb-1 fw-semibold">Aucun mouvement ne correspond à ces filtres</p>
-                    <p class="small mb-3">Essayez une autre période ou un autre produit.</p>
-                    <a href="{% url 'inventory:mouvement_liste' %}" class="btn btn-sm btn-outline-secondary">
-                        Effacer les filtres
-                    </a>
-                {% else %}
-                    <p class="mb-1 fw-semibold">Aucun mouvement enregistré</p>
-                    <p class="small mb-0">Les entrées et sorties de stock apparaîtront ici.</p>
-                {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if is_paginated %}
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 py-2 border-top">
+                <span class="sf-kpi-note m-0">
+                    {{ mouvements|length }} mouvement{{ mouvements|length|pluralize }} sur {{ page_obj.paginator.count }}
+                    {% if filtres %}· période filtrée{% endif %}
+                </span>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&{{ querystring }}">Précédent</a></li>
+                    {% endif %}
+                    <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+                    {% if page_obj.has_next %}
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&{{ querystring }}">Suivant</a></li>
+                    {% endif %}
+                </ul>
             </div>
         {% endif %}
-    </div>
+    {% else %}
+        <div class="sf-vide">
+            {% if filtres.produit or filtres.type or filtres.date_debut or filtres.date_fin %}
+                <div class="sf-vide-titre">Aucun mouvement ne correspond à ces filtres</div>
+                <p>Essayez une autre période ou un autre produit.</p>
+                <a href="{% url 'inventory:mouvement_liste' %}" class="btn btn-sm sf-btn-secondaire">Effacer les filtres</a>
+            {% else %}
+                <div class="sf-vide-titre">Aucun mouvement enregistré</div>
+                <p class="mb-0">Les entrées et sorties de stock apparaîtront ici.</p>
+            {% endif %}
+        </div>
+    {% endif %}
 </div>
-
-{% if is_paginated %}
-    <nav class="mt-3">
-        <ul class="pagination mb-0">
-            {% if page_obj.has_previous %}
-                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&{{ querystring }}">Précédent</a></li>
-            {% endif %}
-            <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
-            {% if page_obj.has_next %}
-                <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&{{ querystring }}">Suivant</a></li>
-            {% endif %}
-        </ul>
-    </nav>
-{% endif %}
 {% endblock %}

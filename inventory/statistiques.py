@@ -16,7 +16,7 @@ from django.db.models import Count, DecimalField, F, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from inventory.models import Mouvement, Produit
+from inventory.models import Categorie, Mouvement, Produit
 
 CHAMP_MONETAIRE = DecimalField(max_digits=14, decimal_places=2)
 
@@ -47,6 +47,38 @@ def kpis_stock(jours_activite: int = 7) -> dict:
     agregats["mouvements_recents"] = Mouvement.objects.filter(date_mouvement__gte=depuis).count()
     agregats["jours_activite"] = jours_activite
     return agregats
+
+
+def valeur_par_categorie():
+    """
+    Valeur du stock ventilée par catégorie, de la plus forte à la plus faible.
+
+    annotate() calcule la somme (quantité × prix d'achat) par catégorie en une
+    seule requête. `pourcentage` sert uniquement à dimensionner les barres à
+    l'écran : il est relatif à la catégorie la plus valorisée.
+    """
+    categories = list(
+        Categorie.objects.annotate(
+            valeur=Coalesce(
+                Sum(
+                    F("produits__quantite_stock") * F("produits__prix_achat"),
+                    filter=Q(produits__actif=True),
+                    output_field=CHAMP_MONETAIRE,
+                ),
+                Decimal("0.00"),
+                output_field=CHAMP_MONETAIRE,
+            )
+        )
+        .filter(valeur__gt=0)
+        .order_by("-valeur")
+    )
+
+    valeur_maximale = categories[0].valeur if categories else Decimal("0.00")
+    for categorie in categories:
+        categorie.pourcentage = (
+            round(categorie.valeur / valeur_maximale * 100) if valeur_maximale else 0
+        )
+    return categories
 
 
 def produits_en_alerte():

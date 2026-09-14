@@ -66,8 +66,9 @@ Quatre indicateurs, calculés en base de données (`aggregate` / `annotate`) :
 | **À réapprovisionner** | Produits au niveau ou sous leur seuil, dont ceux en rupture totale |
 | **Activité récente** | Nombre de mouvements sur les 7 derniers jours |
 
-Le tableau de bord affiche également la liste des produits à réapprovisionner
-(triés du plus critique au moins critique) et les 10 derniers mouvements.
+Le tableau de bord affiche également la ventilation de la valeur du stock par
+catégorie, la liste des produits à réapprovisionner (triés du plus critique au
+moins critique) et les 10 derniers mouvements.
 
 ## Automatisation
 
@@ -198,7 +199,7 @@ masquer un lien ne suffit pas, l'accès direct à l'URL est refusé par un 403.
 python manage.py test
 ```
 
-51 tests couvrent la logique métier (entrées, sorties, stock insuffisant,
+58 tests couvrent la logique métier (entrées, sorties, stock insuffisant,
 quantité nulle, transaction atomique), les alertes email, les KPI du tableau de
 bord, l'export Excel, les permissions par rôle et le parcours utilisateur complet.
 
@@ -231,6 +232,7 @@ inventory/              application unique
 ├── forms.py            ModelForm produit, formulaire de mouvement
 ├── admin.py            administration Django
 ├── templates/          Bootstrap 5, dont les templates email
+├── static/             feuille de style StockFlow (palette vert / blanc)
 └── management/commands/
     ├── seed.py                 données de démonstration
     ├── initialiser_groupes.py  rôles Gerant / Magasinier

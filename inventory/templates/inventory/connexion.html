@@ -2,27 +2,73 @@
 
 {% block titre %}Connexion — StockFlow{% endblock %}
 
-{% block contenu %}
-<div class="row justify-content-center">
-    <div class="col-md-5">
-        <h1 class="h4 mb-3">Connexion</h1>
+{% block contenu_public %}
+<div class="sf-connexion">
+    <div class="sf-connexion-cadre">
 
-        {% if form.errors %}
-            <div class="alert alert-danger">Identifiants incorrects.</div>
-        {% endif %}
+        <div class="sf-connexion-vitrine">
+            <div class="sf-logo p-0">
+                <span class="sf-logo-carre">S</span>
+                <span class="sf-logo-nom">StockFlow</span>
+            </div>
 
-        <form method="post">
-            {% csrf_token %}
-            <div class="mb-3">
-                <label for="{{ form.username.id_for_label }}" class="form-label">Nom d'utilisateur</label>
-                <input type="text" name="username" id="{{ form.username.id_for_label }}" class="form-control" required autofocus>
+            <h1 class="sf-connexion-accroche">
+                Votre stock,<br><span>toujours juste.</span>
+            </h1>
+            <p class="sf-connexion-texte mb-0">
+                Entrées, sorties, valeur du stock, historique complet et alerte
+                automatique avant la rupture.
+            </p>
+
+            <div class="sf-connexion-stats">
+                <div>
+                    <div class="sf-connexion-stat-valeur">1</div>
+                    <div class="sf-connexion-stat-label">Stock, une seule vérité</div>
+                </div>
+                <div>
+                    <div class="sf-connexion-stat-valeur">2</div>
+                    <div class="sf-connexion-stat-label">Rôles</div>
+                </div>
+                <div>
+                    <div class="sf-connexion-stat-valeur">0</div>
+                    <div class="sf-connexion-stat-label">Donnée supprimée</div>
+                </div>
             </div>
-            <div class="mb-3">
-                <label for="{{ form.password.id_for_label }}" class="form-label">Mot de passe</label>
-                <input type="password" name="password" id="{{ form.password.id_for_label }}" class="form-control" required>
+        </div>
+
+        <div class="sf-connexion-formulaire">
+            <div class="sf-connexion-formulaire-interne">
+                <div class="sf-logo-sous mb-1">Gestion de stock</div>
+                <h2 class="sf-titre mb-4">Connexion</h2>
+
+                {% if form.errors %}
+                    <div class="sf-note sf-note-rouge mb-3">
+                        Identifiants incorrects. Vérifiez le nom d'utilisateur et le mot de passe.
+                    </div>
+                {% endif %}
+
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="{{ form.username.id_for_label }}" class="form-label">Nom d'utilisateur</label>
+                        <input type="text" name="username" id="{{ form.username.id_for_label }}"
+                               class="form-control" required autofocus autocomplete="username">
+                    </div>
+                    <div class="mb-4">
+                        <label for="{{ form.password.id_for_label }}" class="form-label">Mot de passe</label>
+                        <input type="password" name="password" id="{{ form.password.id_for_label }}"
+                               class="form-control" required autocomplete="current-password">
+                    </div>
+                    <button type="submit" class="btn sf-btn-vert w-100 py-2">Se connecter</button>
+                </form>
+
+                <div class="sf-note sf-note-neutre mt-4">
+                    Chaque entrée et chaque sortie est enregistrée définitivement.
+                    Deux rôles : gérant et magasinier.
+                </div>
             </div>
-            <button type="submit" class="btn btn-primary">Se connecter</button>
-        </form>
+        </div>
+
     </div>
 </div>
 {% endblock %}
