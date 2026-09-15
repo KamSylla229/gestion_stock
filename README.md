@@ -33,7 +33,8 @@ Conséquences concrètes :
 ## Fonctionnalités
 
 **Gestion du catalogue**
-- Produits, catégories, fournisseurs
+- Produits, catégories, fournisseurs (avec contact et délai de livraison)
+- Unité de vente par produit (sac, barre, casier…)
 - Recherche par nom ou référence
 - Filtres par catégorie, fournisseur, statut et stock bas
 - Désactivation plutôt que suppression : aucune donnée n'est perdue
@@ -55,6 +56,13 @@ Conséquences concrètes :
 - Alertes email automatiques
 - Rapport quotidien par email
 - Export Excel de l'état du stock **et** de l'historique des mouvements
+
+**Commandes fournisseurs**
+- Cycle complet : brouillon, envoi, réception partielle, réception soldée
+- Plusieurs produits par commande, prix figé au moment de la commande
+- La réception crée automatiquement l'entrée de stock, tracée et justifiée
+- Quantité de commande conseillée d'après le rythme de consommation
+- Date de livraison prévue d'après le délai du fournisseur
 
 **Sécurité**
 - Authentification obligatoire sur toute l'application
@@ -198,7 +206,10 @@ teste la connexion au serveur, puis envoie un email de test.
 | | Gérant | Magasinier |
 |---|---|---|
 | Consulter les produits et l'historique | Oui | Oui |
-| Enregistrer entrées et sorties | Oui | Oui |
+| Enregistrer entrées, sorties et ajustements | Oui | Oui |
+| Consulter les commandes | Oui | Oui |
+| Réceptionner une livraison | Oui | Oui |
+| Passer, envoyer et annuler une commande | Oui | Non |
 | Créer et modifier des produits (donc les prix) | Oui | Non |
 | Tableau de bord (données financières) | Oui | Non |
 | Export Excel | Oui | Non |
@@ -212,7 +223,7 @@ masquer un lien ne suffit pas, l'accès direct à l'URL est refusé par un 403.
 python manage.py test
 ```
 
-127 tests couvrent la logique métier (entrées, sorties, stock insuffisant,
+180 tests couvrent la logique métier (entrées, sorties, stock insuffisant,
 quantité nulle, transaction atomique), les alertes email, les KPI du tableau de
 bord, l'export Excel, les permissions par rôle et le parcours utilisateur complet.
 
@@ -237,7 +248,8 @@ bord, l'export Excel, les permissions par rôle et le parcours utilisateur compl
 ```
 config/                 projet Django (settings, urls)
 inventory/              application unique
-├── models.py           Categorie, Fournisseur, Produit, Mouvement
+├── models.py           Categorie, Fournisseur, Produit, Mouvement,
+│                       Commande, LigneCommande
 ├── services.py         logique métier : mouvements de stock et emails
 ├── statistiques.py     calculs ORM partagés (dashboard et rapport)
 ├── exports.py          génération du fichier Excel
@@ -261,3 +273,8 @@ crée le mouvement dans une seule transaction atomique. Aucune vue, aucun script
 et aucun formulaire ne touche directement à ce champ — l'administration Django
 l'affiche d'ailleurs en lecture seule, et l'ajout de mouvements y est désactivé
 pour la même raison.
+
+La réception d'une commande ne fait pas exception : elle passe par
+`receptionner_ligne_commande()`, qui appelle le même service. Une livraison
+apparaît donc dans l'historique comme n'importe quelle entrée, avec la
+référence de la commande en pièce justificative.

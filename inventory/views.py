@@ -5,14 +5,35 @@ from django.contrib.messages.views import SuccessMessageMixin
 from django.core.exceptions import ValidationError
 from django.db.models import F, Q
 from django.http import HttpResponse
-from django.shortcuts import redirect
+from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView
+from django.views.generic import (
+    CreateView,
+    DetailView,
+    FormView,
+    ListView,
+    TemplateView,
+    UpdateView,
+    View,
+)
 
 from inventory import exports, services, statistiques
-from inventory.forms import MouvementForm, ProduitForm
-from inventory.models import Categorie, Fournisseur, Mouvement, Produit
+from inventory.forms import (
+    CommandeForm,
+    LigneCommandeForm,
+    MouvementForm,
+    ProduitForm,
+    ReceptionLigneForm,
+)
+from inventory.models import (
+    Categorie,
+    Commande,
+    Fournisseur,
+    LigneCommande,
+    Mouvement,
+    Produit,
+)
 
 
 def querystring_sans_page(request):
@@ -213,7 +234,17 @@ class ProduitDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
             marge / self.object.prix_achat * 100 if self.object.prix_achat else None
         )
 
-        contexte["stats"] = statistiques.statistiques_produit(self.object)
+        stats = statistiques.statistiques_produit(self.object)
+        contexte["stats"] = stats
+
+        # Alerte si le stock ne tient pas jusqu'à la prochaine livraison.
+        fournisseur = self.object.fournisseur
+        contexte["couverture_insuffisante"] = bool(
+            stats["couverture"] is not None
+            and fournisseur
+            and fournisseur.delai_jours
+            and stats["couverture"] < fournisseur.delai_jours
+        )
         return contexte
 
 
@@ -414,3 +445,218 @@ class MouvementListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         contexte["pages_affichees"] = pages_affichees(contexte)
         contexte["resume_pagination"] = resume_pagination(contexte, "mouvement")
         return contexte
+
+
+# ---------------------------------------------------------------------------
+# Commandes fournisseurs
+# ---------------------------------------------------------------------------
+
+
+class CommandeListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+    """Commandes en cours et passées, filtrables par statut et fournisseur."""
+
+    model = Commande
+    paginate_by = 20
+    context_object_name = "commandes"
+    permission_required = "inventory.view_commande"
+    extra_context = {"section": "commandes"}
+
+    def get_queryset(self):
+        queryset = Commande.objects.select_related("fournisseur", "cree_par").prefetch_related(
+            "lignes"
+        )
+
+        statut = self.request.GET.get("statut", "")
+        if statut in dict(Commande.STATUT_CHOICES):
+            queryset = queryset.filter(statut=statut)
+
+        fournisseur = self.request.GET.get("fournisseur", "")
+        if fournisseur.isdigit():
+            queryset = queryset.filter(fournisseur_id=fournisseur)
+
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte["fournisseurs"] = Fournisseur.objects.filter(actif=True)
+        contexte["statuts"] = Commande.STATUT_CHOICES
+        contexte["filtres"] = self.request.GET
+        contexte["querystring"] = querystring_sans_page(self.request)
+        contexte["pages_affichees"] = pages_affichees(contexte)
+        contexte["resume_pagination"] = resume_pagination(contexte, "commande")
+        return contexte
+
+
+class CommandeCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
+    """
+    Ouvre une commande en brouillon.
+
+    Appelée depuis la fiche produit avec ?produit=&quantite=, elle ajoute
+    directement la première ligne : c'est le bouton « Commander ».
+    """
+
+    template_name = "inventory/commande_form.html"
+    form_class = CommandeForm
+    permission_required = "inventory.add_commande"
+    extra_context = {"section": "commandes", "titre": "Nouvelle commande"}
+
+    def get_initial(self):
+        initial = super().get_initial()
+        produit = self._produit_demande()
+        if produit and produit.fournisseur:
+            initial["fournisseur"] = produit.fournisseur_id
+        return initial
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte["produit_demande"] = self._produit_demande()
+        contexte["quantite_demandee"] = self._quantite_demandee()
+        return contexte
+
+    def _produit_demande(self):
+        identifiant = self.request.GET.get("produit", "")
+        if not identifiant.isdigit():
+            return None
+        return Produit.objects.filter(pk=identifiant).first()
+
+    def _quantite_demandee(self):
+        quantite = self.request.GET.get("quantite", "")
+        return int(quantite) if quantite.isdigit() and int(quantite) > 0 else None
+
+    def form_valid(self, form):
+        commande = services.creer_commande(
+            fournisseur=form.cleaned_data["fournisseur"],
+            utilisateur=self.request.user,
+            commentaire=form.cleaned_data["commentaire"],
+        )
+
+        # Première ligne pré-remplie depuis la fiche produit.
+        produit = self._produit_demande()
+        quantite = self._quantite_demandee()
+        if produit and quantite:
+            try:
+                services.ajouter_ligne_commande(commande, produit, quantite)
+            except ValidationError as erreur:
+                messages.warning(self.request, erreur.messages[0])
+
+        messages.success(self.request, f"Commande {commande.reference} ouverte.")
+        return redirect(commande.get_absolute_url())
+
+
+class CommandeDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+    """Détail d'une commande : lignes, avancement et actions disponibles."""
+
+    model = Commande
+    context_object_name = "commande"
+    permission_required = "inventory.view_commande"
+    extra_context = {"section": "commandes"}
+
+    def get_queryset(self):
+        return Commande.objects.select_related("fournisseur", "cree_par").prefetch_related(
+            "lignes__produit"
+        )
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        commande = self.object
+        contexte["formulaire_ligne"] = LigneCommandeForm(commande=commande)
+        return contexte
+
+
+class ActionCommandeView(LoginRequiredMixin, PermissionRequiredMixin, View):
+    """
+    Base des actions sur une commande : toujours en POST, jamais en GET.
+
+    Une action qui change un état ne doit pas pouvoir être déclenchée par un
+    simple lien ou un préchargement du navigateur.
+    """
+
+    permission_required = "inventory.change_commande"
+
+    def post(self, request, pk, *args, **kwargs):
+        commande = get_object_or_404(Commande, pk=pk)
+        try:
+            self.executer(commande, request)
+        except ValidationError as erreur:
+            messages.error(request, erreur.messages[0])
+        return redirect(commande.get_absolute_url())
+
+    def executer(self, commande, request):
+        raise NotImplementedError
+
+
+class AjouterLigneCommandeView(ActionCommandeView):
+    def executer(self, commande, request):
+        formulaire = LigneCommandeForm(request.POST, commande=commande)
+        if not formulaire.is_valid():
+            raise ValidationError("Vérifiez le produit et la quantité saisis.")
+
+        ligne = services.ajouter_ligne_commande(
+            commande,
+            produit=formulaire.cleaned_data["produit"],
+            quantite=formulaire.cleaned_data["quantite"],
+            prix_unitaire=formulaire.cleaned_data.get("prix_unitaire") or None,
+        )
+        messages.success(request, f"{ligne.produit.nom} ajouté à la commande.")
+
+
+class RetirerLigneCommandeView(LoginRequiredMixin, PermissionRequiredMixin, View):
+    permission_required = "inventory.change_commande"
+
+    def post(self, request, pk, *args, **kwargs):
+        ligne = get_object_or_404(LigneCommande.objects.select_related("commande"), pk=pk)
+        commande = ligne.commande
+        try:
+            services.retirer_ligne_commande(ligne)
+            messages.success(request, "Ligne retirée de la commande.")
+        except ValidationError as erreur:
+            messages.error(request, erreur.messages[0])
+        return redirect(commande.get_absolute_url())
+
+
+class EnvoyerCommandeView(ActionCommandeView):
+    def executer(self, commande, request):
+        services.envoyer_commande(commande)
+        messages.success(
+            request, f"Commande {commande.reference} envoyée à {commande.fournisseur.nom}."
+        )
+
+
+class AnnulerCommandeView(ActionCommandeView):
+    def executer(self, commande, request):
+        services.annuler_commande(commande)
+        messages.success(request, f"Commande {commande.reference} annulée.")
+
+
+class ReceptionnerLigneView(LoginRequiredMixin, PermissionRequiredMixin, View):
+    """Enregistre une livraison : crée l'entrée de stock via le service."""
+
+    permission_required = "inventory.receptionner_commande"
+
+    def post(self, request, pk, *args, **kwargs):
+        ligne = get_object_or_404(
+            LigneCommande.objects.select_related("commande", "produit"), pk=pk
+        )
+        commande = ligne.commande
+
+        formulaire = ReceptionLigneForm(request.POST, ligne=ligne)
+        if not formulaire.is_valid():
+            messages.error(request, "Quantité reçue invalide.")
+            return redirect(commande.get_absolute_url())
+
+        try:
+            services.receptionner_ligne_commande(
+                ligne,
+                quantite=formulaire.cleaned_data["quantite"],
+                utilisateur=request.user,
+            )
+            ligne.refresh_from_db()
+            messages.success(
+                request,
+                f"{ligne.produit.nom} : réception enregistrée, "
+                f"stock à {ligne.produit.quantite_stock}.",
+            )
+        except ValidationError as erreur:
+            messages.error(request, erreur.messages[0])
+
+        return redirect(commande.get_absolute_url())

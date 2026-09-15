@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block titre %}{{ commande.reference }} — StockFlow{% endblock %}
+
+{% block contenu %}
+<div class="sf-entete">
+    <div>
+        <h1 class="sf-titre">{{ commande.reference }}</h1>
+        <p class="sf-sous-titre">
+            {{ commande.fournisseur.nom }}
+            {% if commande.fournisseur.contact %} · {{ commande.fournisseur.contact }}{% endif %}
+            · ouverte le {{ commande.date_creation|date:"j F Y" }}
+            {% if commande.cree_par %} par {{ commande.cree_par.username }}{% endif %}
+        </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        {% include "inventory/_badge_commande.html" %}
+
+        {% if commande.statut == "BROUILLON" and perms.inventory.change_commande %}
+            <form method="post" action="{% url 'inventory:commande_envoyer' commande.pk %}" class="m-0">
+                {% csrf_token %}
+                <button type="submit" class="btn sf-btn-vert">Envoyer au fournisseur</button>
+            </form>
+        {% endif %}
+
+        {% if commande.statut == "BROUILLON" or commande.statut == "ENVOYEE" %}
+            {% if perms.inventory.change_commande %}
+                <form method="post" action="{% url 'inventory:commande_annuler' commande.pk %}" class="m-0">
+                    {% csrf_token %}
+                    <button type="submit" class="btn sf-btn-secondaire">Annuler la commande</button>
+                </form>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+
+{# ---------- Indicateurs ---------- #}
+<div class="row g-3 mb-3">
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="sf-kpi">
+            <div class="sf-kpi-label">Montant total</div>
+            <div class="sf-kpi-valeur">{{ commande.montant_total|floatformat:0|intcomma }}<span class="sf-unite">F</span></div>
+            <div class="sf-kpi-note">au prix commandé</div>
+        </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="sf-kpi">
+            <div class="sf-kpi-label">Lignes</div>
+            <div class="sf-kpi-valeur">{{ commande.lignes.count }}</div>
+            <div class="sf-kpi-note">produit{{ commande.lignes.count|pluralize }} commandé{{ commande.lignes.count|pluralize }}</div>
+        </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="sf-kpi">
+            <div class="sf-kpi-label">Envoyée le</div>
+            <div class="sf-kpi-valeur" style="font-size:19px;">
+                {% if commande.date_envoi %}{{ commande.date_envoi|date:"j M" }}{% else %}—{% endif %}
+            </div>
+            <div class="sf-kpi-note">
+                {% if commande.date_livraison_prevue %}
+                    livraison prévue le {{ commande.date_livraison_prevue|date:"j M" }}
+                {% elif commande.date_envoi %}
+                    délai fournisseur non renseigné
+                {% else %}
+                    pas encore envoyée
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="sf-kpi">
+            <div class="sf-kpi-label">Réception</div>
+            <div class="sf-kpi-valeur" style="font-size:19px;">
+                {% if commande.date_reception %}{{ commande.date_reception|date:"j M" }}{% else %}—{% endif %}
+            </div>
+            <div class="sf-kpi-note">
+                {% if commande.statut == "RECUE" %}commande soldée
+                {% elif commande.statut == "PARTIELLE" %}livraison en cours
+                {% else %}rien reçu{% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if commande.commentaire %}
+    <div class="sf-note sf-note-neutre mb-3">{{ commande.commentaire }}</div>
+{% endif %}
+
+{# ---------- Lignes de la commande ---------- #}
+<div class="sf-carte mb-3">
+    <div class="sf-carte-entete">
+        <span>Produits commandés</span>
+        {% if commande.modifiable %}
+            <span class="sf-kpi-note m-0">Modifiable tant que la commande est en brouillon</span>
+        {% endif %}
+    </div>
+
+    {% if commande.lignes.all %}
+        <div class="table-responsive">
+            <table class="sf-table">
+                <thead>
+                    <tr>
+                        <th>Produit</th>
+                        <th class="text-end sf-num">Commandé</th>
+                        <th class="text-end sf-num">Reçu</th>
+                        <th>Avancement</th>
+                        <th class="text-end sf-num">Prix unitaire</th>
+                        <th class="text-end sf-num">Montant</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ligne in commande.lignes.all %}
+                        <tr>
+                            <td>
+                                <a href="{{ ligne.produit.get_absolute_url }}">{{ ligne.produit.nom }}</a>
+                                <div class="sf-ref">{{ ligne.produit.reference }}</div>
+                            </td>
+                            <td class="text-end sf-num fw-semibold">
+                                {{ ligne.quantite_commandee|intcomma }}
+                                <span class="sf-ref">{{ ligne.produit.unite_affichee }}</span>
+                            </td>
+                            <td class="text-end sf-num">{{ ligne.quantite_recue|intcomma }}</td>
+                            <td>
+                                {% if ligne.soldee %}
+                                    <span class="sf-badge sf-badge-vert">Soldée</span>
+                                {% else %}
+                                    <span class="sf-badge sf-badge-ambre">{{ ligne.quantite_restante|intcomma }} attendu{{ ligne.quantite_restante|pluralize }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end sf-num">{{ ligne.prix_unitaire|floatformat:0|intcomma }}</td>
+                            <td class="text-end sf-num">{{ ligne.montant|floatformat:0|intcomma }}</td>
+                            <td class="text-end">
+                                {% if commande.modifiable and perms.inventory.change_commande %}
+                                    <form method="post" action="{% url 'inventory:ligne_retirer' ligne.pk %}" class="m-0 d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm sf-btn-secondaire">Retirer</button>
+                                    </form>
+                                {% elif commande.receptionnable and not ligne.soldee and perms.inventory.receptionner_commande %}
+                                    <form method="post" action="{% url 'inventory:ligne_receptionner' ligne.pk %}"
+                                          class="m-0 d-flex gap-2 justify-content-end align-items-center">
+                                        {% csrf_token %}
+                                        <input type="number" name="quantite" min="1"
+                                               max="{{ ligne.quantite_restante }}"
+                                               value="{{ ligne.quantite_restante }}"
+                                               class="form-control form-control-sm" style="max-width:6rem;"
+                                               aria-label="Quantité reçue pour {{ ligne.produit.nom }}">
+                                        <button type="submit" class="btn btn-sm sf-btn-vert text-nowrap">Réceptionner</button>
+                                    </form>
+                                {% else %}
+                                    <span class="text-secondary">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="sf-vide">
+            <div class="sf-vide-titre">Aucun produit dans cette commande</div>
+            <p class="mb-0">Ajoutez au moins une ligne avant de l'envoyer au fournisseur.</p>
+        </div>
+    {% endif %}
+</div>
+
+{# ---------- Ajout d'une ligne ---------- #}
+{% if commande.modifiable and perms.inventory.change_commande %}
+    <div class="sf-carte">
+        <div class="sf-carte-entete">Ajouter un produit</div>
+        <div class="sf-carte-corps">
+            <form method="post" action="{% url 'inventory:commande_ajouter_ligne' commande.pk %}"
+                  class="row g-2 align-items-end">
+                {% csrf_token %}
+                {% for champ in formulaire_ligne %}
+                    <div class="col-12 col-md-4">
+                        <label for="{{ champ.id_for_label }}" class="form-label">{{ champ.label }}</label>
+                        {{ champ }}
+                    </div>
+                {% endfor %}
+                <div class="col-12 col-md-auto">
+                    <button type="submit" class="btn sf-btn-principal">Ajouter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}

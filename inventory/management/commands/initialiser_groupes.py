@@ -16,6 +16,7 @@ PERMISSIONS_GERANT = [
     "view_categorie", "add_categorie", "change_categorie",
     "view_fournisseur", "add_fournisseur", "change_fournisseur",
     "view_mouvement", "add_mouvement",
+    "view_commande", "add_commande", "change_commande", "receptionner_commande",
     "acceder_tableau_bord",
     "exporter_stock",
 ]
@@ -25,6 +26,9 @@ PERMISSIONS_MAGASINIER = [
     "view_categorie",
     "view_fournisseur",
     "view_mouvement", "add_mouvement",
+    # Réceptionner une livraison est un travail de magasin : le magasinier
+    # consulte les commandes et enregistre ce qui arrive, mais n'en passe pas.
+    "view_commande", "receptionner_commande",
 ]
 
 GROUPES = {

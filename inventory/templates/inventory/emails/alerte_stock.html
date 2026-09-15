@@ -52,7 +52,7 @@
                             </tr>
                             <tr>
                                 <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold;">Stock avant la sortie</td>
-                                <td style="padding:10px 12px; border:1px solid #dee2e6;">{{ stock_avant }}</td>
+                                <td style="padding:10px 12px; border:1px solid #dee2e6;">{{ stock_avant }} {{ produit.unite_affichee }}</td>
                             </tr>
                             <tr>
                                 <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold;">Quantité sortie</td>
@@ -66,6 +66,22 @@
                                 <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold;">Seuil d'alerte</td>
                                 <td style="padding:10px 12px; border:1px solid #dee2e6;">{{ seuil_alerte }}</td>
                             </tr>
+                            {% if produit.fournisseur %}
+                            <tr>
+                                <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold;">Fournisseur</td>
+                                <td style="padding:10px 12px; border:1px solid #dee2e6;">
+                                    {{ produit.fournisseur.nom }}
+                                    {% if produit.fournisseur.contact %}<br><span style="color:#6c757d; font-size:13px;">{{ produit.fournisseur.contact }}</span>{% endif %}
+                                    {% if produit.fournisseur.telephone %}<br><span style="color:#6c757d; font-size:13px;">{{ produit.fournisseur.telephone }}</span>{% endif %}
+                                </td>
+                            </tr>
+                            {% if produit.fournisseur.delai_jours %}
+                            <tr>
+                                <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold;">Délai de livraison</td>
+                                <td style="padding:10px 12px; border:1px solid #dee2e6;">{{ produit.fournisseur.delai_jours }} jours</td>
+                            </tr>
+                            {% endif %}
+                            {% endif %}
                             <tr>
                                 <td style="padding:10px 12px; background-color:#f8f9fa; border:1px solid #dee2e6; font-weight:bold;">Date de l'alerte</td>
                                 <td style="padding:10px 12px; border:1px solid #dee2e6;">{{ date_alerte|date:"d/m/Y à H:i" }}</td>

@@ -1,0 +1,3 @@
+{% comment %}
+Badge de statut de commande, partagé par la liste et le détail.
+{% endcomment %}{% if commande.statut == "BROUILLON" %}<span class="sf-badge sf-badge-gris">Brouillon</span>{% elif commande.statut == "ENVOYEE" %}<span class="sf-badge sf-badge-bleu">Envoyée</span>{% elif commande.statut == "PARTIELLE" %}<span class="sf-badge sf-badge-ambre">Reçue partiellement</span>{% elif commande.statut == "RECUE" %}<span class="sf-badge sf-badge-vert">Reçue</span>{% else %}<span class="sf-badge sf-badge-rouge">Annulée</span>{% endif %}

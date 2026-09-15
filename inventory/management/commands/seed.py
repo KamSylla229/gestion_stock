@@ -34,14 +34,28 @@ PRODUITS = [
     ("BOI-005", "Café soluble 100g", "Boissons", 1200, 1700, 10),
 ]
 
+# (nom, contact, telephone, delai de livraison en jours)
 FOURNISSEURS = [
-    "Grossiste Dantokpa",
-    "Import Cotonou SARL",
-    "Bénin Distribution",
-    "Fournisseur Ayélala",
+    ("Grossiste Dantokpa", "M. Sossou", "+229 97 00 00 12", 3),
+    ("Import Cotonou SARL", "Mme Hounkpe", "+229 96 11 22 33", 7),
+    ("Bénin Distribution", "M. Adjovi", "+229 95 44 55 66", 4),
+    ("Fournisseur Ayélala", "Mme Zinsou", "+229 94 77 88 99", 5),
 ]
 
 CATEGORIES = ["Alimentation", "Hygiène & Entretien", "Boissons"]
+
+# Unité de vente par référence. Les produits absents prennent « unité ».
+UNITES = {
+    "ALI-001": "sac", "ALI-002": "sac", "ALI-003": "sac",
+    "ALI-004": "bidon", "ALI-005": "bidon", "ALI-006": "kg",
+    "ALI-007": "boîte", "ALI-008": "paquet", "ALI-009": "kg",
+    "ALI-010": "boîte", "ALI-011": "boîte", "ALI-012": "sac",
+    "HYG-001": "savon", "HYG-002": "bidon", "HYG-003": "paquet",
+    "HYG-004": "bouteille", "HYG-005": "pack", "HYG-006": "tube",
+    "HYG-007": "pièce", "HYG-008": "bouteille",
+    "BOI-001": "pack", "BOI-002": "bouteille", "BOI-003": "bouteille",
+    "BOI-004": "casier", "BOI-005": "boîte",
+}
 
 NB_MOUVEMENTS_SUPPLEMENTAIRES = 35  # + 1 entrée initiale par produit (25) = 60 au total
 
@@ -58,14 +72,22 @@ class Command(BaseCommand):
         random.seed(42)
 
         categories = {nom: Categorie.objects.get_or_create(nom=nom)[0] for nom in CATEGORIES}
-        fournisseurs = [Fournisseur.objects.get_or_create(nom=nom)[0] for nom in FOURNISSEURS]
+        fournisseurs = [
+            Fournisseur.objects.get_or_create(
+                nom=nom,
+                defaults={"contact": contact, "telephone": telephone, "delai_jours": delai},
+            )[0]
+            for nom, contact, telephone, delai in FOURNISSEURS
+        ]
 
         produits = []
         for i, (reference, nom, nom_categorie, prix_achat, prix_vente, seuil_alerte) in enumerate(PRODUITS):
+            unite = UNITES.get(reference, "unité")
             produit, _ = Produit.objects.get_or_create(
                 reference=reference,
                 defaults={
                     "nom": nom,
+                    "unite": unite,
                     "categorie": categories[nom_categorie],
                     "fournisseur": fournisseurs[i % len(fournisseurs)],
                     "prix_achat": prix_achat,

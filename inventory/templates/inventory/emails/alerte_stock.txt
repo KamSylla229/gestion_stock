@@ -13,6 +13,13 @@ Quantite sortie       : - {{ quantite_sortie }}
 Stock actuel          : {{ stock_apres }}
 Seuil d'alerte        : {{ seuil_alerte }}
 Date de l'alerte      : {{ date_alerte|date:"d/m/Y a H:i" }}
+{% if produit.fournisseur %}
+FOURNISSEUR
+Nom                   : {{ produit.fournisseur.nom }}{% if produit.fournisseur.contact %}
+Contact               : {{ produit.fournisseur.contact }}{% endif %}{% if produit.fournisseur.telephone %}
+Telephone             : {{ produit.fournisseur.telephone }}{% endif %}{% if produit.fournisseur.delai_jours %}
+Delai de livraison    : {{ produit.fournisseur.delai_jours }} jours{% endif %}
+{% endif %}
 {% if site_url %}
 Fiche produit : {{ site_url }}{{ produit.get_absolute_url }}
 {% endif %}

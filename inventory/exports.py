@@ -13,6 +13,7 @@ from openpyxl.utils import get_column_letter
 COLONNES = [
     ("Référence", 16),
     ("Produit", 34),
+    ("Unité", 12),
     ("Catégorie", 20),
     ("Fournisseur", 24),
     ("Stock", 10),
@@ -87,6 +88,7 @@ def generer_classeur_stock(produits) -> Workbook:
         valeurs = [
             produit.reference,
             produit.nom,
+            produit.unite,
             produit.categorie.nom if produit.categorie else "",
             produit.fournisseur.nom if produit.fournisseur else "",
             produit.quantite_stock,
@@ -100,13 +102,13 @@ def generer_classeur_stock(produits) -> Workbook:
             cellule.border = BORDURE_FINE
 
         # Formats numériques
-        feuille.cell(row=ligne, column=5).number_format = FORMAT_ENTIER
         feuille.cell(row=ligne, column=6).number_format = FORMAT_ENTIER
-        feuille.cell(row=ligne, column=8).number_format = FORMAT_MONETAIRE
+        feuille.cell(row=ligne, column=7).number_format = FORMAT_ENTIER
         feuille.cell(row=ligne, column=9).number_format = FORMAT_MONETAIRE
+        feuille.cell(row=ligne, column=10).number_format = FORMAT_MONETAIRE
 
         # Statut coloré selon la situation
-        cellule_statut = feuille.cell(row=ligne, column=7)
+        cellule_statut = feuille.cell(row=ligne, column=8)
         cellule_statut.fill = REMPLISSAGE_STATUT[statut]
         cellule_statut.font = POLICE_STATUT[statut]
         cellule_statut.alignment = Alignment(horizontal="center")

@@ -10,9 +10,12 @@ a été tenu fermé pour livrer un produit fiable plutôt qu'un produit large.
 La refonte visuelle (`ea19f94`) a repris l'identité des maquettes sur les
 7 écrans existants. Les blocs **A** et **B** ont ensuite été livrés.
 
-Restent à faire : **C** (champs sur Produit / Fournisseur), **D** (écrans
-entiers), **E** (indicateurs dont la règle de calcul doit être tranchée) et
-**F** (hors périmètre v1).
+Restent à faire : **D** (écrans entiers : Alertes, Rapports, Paramètres,
+compléments de connexion), **E** (indicateurs dont la règle de calcul doit être
+tranchée avec le client) et **F** (hors périmètre v1).
+
+Note : le bloc **D1** (page Alertes et réapprovisionnement) est désormais bien
+outillé — délai fournisseur, quantité conseillée et commandes existent déjà.
 
 Le classement est fait par **prérequis technique**, pas par écran : c'est ce qui
 détermine l'ordre de réalisation.
@@ -64,14 +67,44 @@ Les mouvements enregistrés avant cette migration ont `utilisateur` et
 | ~~B6~~ | Type de mouvement « Ajustement » (casse, écart d'inventaire) | Sortie, historique |
 | ~~B7~~ | Colonne « Valeur » du mouvement | Historique |
 
-## C. Nécessite des champs sur `Produit` / `Fournisseur`
+## C. Champs produit / fournisseur et commandes — FAIT
 
-| # | Élément | Champ à ajouter |
+Migration `0005` (trois champs) et `0006` (commandes).
+
+| # | Élément | Livré |
 |---|---|---|
-| C1 | Unité de mesure affichée partout (« 14 barres », « 0 sac ») | `Produit.unite` |
-| C2 | Délai de livraison habituel du fournisseur | `Fournisseur.delai_jours` |
-| C3 | Contact nommé chez le fournisseur | `Fournisseur.contact` |
-| C4 | Date de dernière commande et bouton « Commander N unités » | modèle `Commande` à créer |
+| ~~C1~~ | Unité de mesure affichée partout | `Produit.unite`, avec repli sur « unité » |
+| ~~C2~~ | Délai de livraison du fournisseur | `Fournisseur.delai_jours` |
+| ~~C3~~ | Contact nommé chez le fournisseur | `Fournisseur.contact` |
+| ~~C4~~ | Commandes fournisseurs avec suivi complet | modèles `Commande` et `LigneCommande` |
+
+**Cycle de vie retenu** (choix validé) :
+
+```
+BROUILLON  →  ENVOYEE  →  PARTIELLE  →  RECUE
+     ↓            ↓
+         ANNULEE
+```
+
+- Les lignes ne sont modifiables qu'en brouillon.
+- Le prix est figé à l'ajout de la ligne : un changement de tarif ultérieur
+  ne réécrit pas l'historique d'achat.
+- **La réception passe par `services.receptionner_ligne_commande()`, qui
+  appelle `enregistrer_mouvement()`** : le stock n'est jamais modifié hors du
+  service, et la réception apparaît dans l'historique avec la référence de
+  commande en pièce justificative.
+- Les livraisons partielles sont gérées ligne par ligne ; la commande ne se
+  solde que lorsque toutes les lignes le sont.
+- Une commande déjà partiellement reçue **ne peut plus être annulée** : la
+  marchandise est entrée en stock.
+- Toutes les actions qui changent un état sont en **POST uniquement**.
+
+**Rôles** : le gérant passe, envoie et annule les commandes ; le magasinier
+consulte et réceptionne.
+
+Deux effets de bord utiles : l'email d'alerte indique désormais qui appeler
+chez le fournisseur et sous quel délai, et la fiche produit avertit quand le
+stock ne tient pas jusqu'à la prochaine livraison possible.
 
 ## D. Écrans entiers à construire
 

@@ -38,4 +38,14 @@ urlpatterns = [
     path("mouvements/entree/", views.EntreeStockView.as_view(), name="entree_stock"),
     path("mouvements/sortie/", views.SortieStockView.as_view(), name="sortie_stock"),
     path("mouvements/ajustement/", views.AjustementStockView.as_view(), name="ajustement_stock"),
+
+    # Commandes fournisseurs
+    path("commandes/", views.CommandeListView.as_view(), name="commande_liste"),
+    path("commandes/nouvelle/", views.CommandeCreateView.as_view(), name="commande_creer"),
+    path("commandes/<int:pk>/", views.CommandeDetailView.as_view(), name="commande_detail"),
+    path("commandes/<int:pk>/lignes/ajouter/", views.AjouterLigneCommandeView.as_view(), name="commande_ajouter_ligne"),
+    path("commandes/<int:pk>/envoyer/", views.EnvoyerCommandeView.as_view(), name="commande_envoyer"),
+    path("commandes/<int:pk>/annuler/", views.AnnulerCommandeView.as_view(), name="commande_annuler"),
+    path("lignes/<int:pk>/retirer/", views.RetirerLigneCommandeView.as_view(), name="ligne_retirer"),
+    path("lignes/<int:pk>/receptionner/", views.ReceptionnerLigneView.as_view(), name="ligne_receptionner"),
 ]

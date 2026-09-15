@@ -1,6 +1,7 @@
 from django import forms
+from django.db import models
 
-from inventory.models import Mouvement, Produit
+from inventory.models import Commande, Fournisseur, Mouvement, Produit
 
 
 def appliquer_classes_bootstrap(champs):
@@ -27,6 +28,7 @@ class ProduitForm(forms.ModelForm):
         fields = [
             "reference",
             "nom",
+            "unite",
             "categorie",
             "fournisseur",
             "prix_achat",
@@ -37,6 +39,8 @@ class ProduitForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["unite"].widget.attrs["placeholder"] = "sac, barre, casier, carton…"
+        self.fields["unite"].help_text = "Affichée à côté des quantités."
         appliquer_classes_bootstrap(self.fields)
 
 
@@ -81,4 +85,66 @@ class MouvementForm(forms.Form):
             self.fields["motif"].label = "Motif de l'ajustement"
             self.fields["motif"].widget.attrs["placeholder"] = "Casse, vol, écart d'inventaire…"
 
+        appliquer_classes_bootstrap(self.fields)
+
+
+class CommandeForm(forms.Form):
+    """Ouverture d'une commande : on choisit le fournisseur, rien de plus."""
+
+    fournisseur = forms.ModelChoiceField(
+        queryset=Fournisseur.objects.filter(actif=True),
+        label="Fournisseur",
+        empty_label="— Choisir un fournisseur —",
+    )
+    commentaire = forms.CharField(
+        max_length=255, required=False, label="Commentaire",
+        widget=forms.TextInput(attrs={"placeholder": "Facultatif"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        appliquer_classes_bootstrap(self.fields)
+
+
+class LigneCommandeForm(forms.Form):
+    """
+    Ajout d'un produit à une commande en brouillon.
+
+    Le prix est pré-rempli avec le prix d'achat courant mais reste
+    modifiable : un fournisseur peut négocier un tarif ponctuel.
+    """
+
+    produit = forms.ModelChoiceField(
+        queryset=Produit.objects.filter(actif=True),
+        label="Produit",
+        empty_label="— Choisir un produit —",
+    )
+    quantite = forms.IntegerField(min_value=1, label="Quantité")
+    prix_unitaire = forms.DecimalField(
+        max_digits=10, decimal_places=2, min_value=0, required=False,
+        label="Prix unitaire",
+        widget=forms.NumberInput(attrs={"placeholder": "Prix d\'achat par défaut"}),
+    )
+
+    def __init__(self, *args, commande=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        # On ne propose que les produits du fournisseur de la commande,
+        # plus ceux sans fournisseur attitré.
+        if commande is not None:
+            self.fields["produit"].queryset = Produit.objects.filter(actif=True).filter(
+                models.Q(fournisseur=commande.fournisseur) | models.Q(fournisseur__isnull=True)
+            )
+        appliquer_classes_bootstrap(self.fields)
+
+
+class ReceptionLigneForm(forms.Form):
+    """Quantité effectivement livrée pour une ligne de commande."""
+
+    quantite = forms.IntegerField(min_value=1, label="Quantité reçue")
+
+    def __init__(self, *args, ligne=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if ligne is not None:
+            self.fields["quantite"].max_value = ligne.quantite_restante
+            self.fields["quantite"].widget.attrs["max"] = ligne.quantite_restante
         appliquer_classes_bootstrap(self.fields)

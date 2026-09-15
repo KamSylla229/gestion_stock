@@ -12,9 +12,9 @@ class CategorieAdmin(admin.ModelAdmin):
 
 @admin.register(Fournisseur)
 class FournisseurAdmin(admin.ModelAdmin):
-    list_display = ("nom", "telephone", "email", "actif")
+    list_display = ("nom", "contact", "telephone", "email", "delai_jours", "actif")
     list_filter = ("actif",)
-    search_fields = ("nom", "email")
+    search_fields = ("nom", "contact", "email")
 
 
 @admin.register(Produit)
@@ -22,6 +22,7 @@ class ProduitAdmin(admin.ModelAdmin):
     list_display = (
         "reference",
         "nom",
+        "unite",
         "categorie",
         "fournisseur",
         "prix_achat",

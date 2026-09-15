@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block titre %}{{ titre }} — StockFlow{% endblock %}
+
+{% block contenu %}
+<div class="sf-entete">
+    <div>
+        <h1 class="sf-titre">{{ titre }}</h1>
+        <p class="sf-sous-titre">La commande s'ouvre en brouillon : vous ajouterez les produits ensuite</p>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-12 col-xl-7">
+        <div class="sf-carte">
+            <div class="sf-carte-corps">
+                {% if produit_demande and quantite_demandee %}
+                    <div class="sf-note sf-note-neutre mb-3">
+                        Première ligne pré-remplie :
+                        <strong>{{ quantite_demandee|intcomma }} {{ produit_demande.unite_affichee }}</strong>
+                        de {{ produit_demande.nom }}.
+                    </div>
+                {% endif %}
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    {% if form.non_field_errors %}
+                        <div class="sf-note sf-note-rouge mb-3">{{ form.non_field_errors }}</div>
+                    {% endif %}
+
+                    {% for champ in form %}
+                        <div class="mb-3">
+                            <label for="{{ champ.id_for_label }}" class="form-label">{{ champ.label }}</label>
+                            {{ champ }}
+                            {% if champ.errors %}
+                                <div class="text-danger small mt-1">{{ champ.errors|striptags }}</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+
+                    <div class="d-flex flex-wrap gap-2 pt-1">
+                        <button type="submit" class="btn sf-btn-principal">Ouvrir la commande</button>
+                        <a href="{% url 'inventory:commande_liste' %}" class="btn sf-btn-secondaire">Annuler</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-5">
+        <div class="sf-carte">
+            <div class="sf-carte-entete">Comment ça se passe</div>
+            <div class="sf-carte-corps d-flex flex-column gap-2">
+                <div class="sf-note sf-note-neutre">
+                    <strong>1. Brouillon</strong> — vous composez la commande,
+                    les lignes restent modifiables.
+                </div>
+                <div class="sf-note sf-note-neutre">
+                    <strong>2. Envoyée</strong> — transmise au fournisseur,
+                    les lignes sont figées.
+                </div>
+                <div class="sf-note sf-note-neutre">
+                    <strong>3. Réception</strong> — à chaque livraison, vous saisissez
+                    les quantités reçues. L'entrée de stock est créée automatiquement.
+                </div>
+                <div class="sf-note sf-note-neutre">
+                    Les livraisons partielles sont gérées : la commande reste ouverte
+                    tant que tout n'est pas arrivé.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

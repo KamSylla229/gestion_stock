@@ -94,6 +94,7 @@
                             <td class="text-secondary">{{ produit.fournisseur.nom|default:"—" }}</td>
                             <td class="text-end sf-num fw-semibold {% if produit.quantite_stock == 0 %}text-danger{% elif produit.stock_bas %}text-warning-emphasis{% endif %}">
                                 {{ produit.quantite_stock|intcomma }}
+                                {% if produit.unite %}<span class="sf-ref">{{ produit.unite }}</span>{% endif %}
                             </td>
                             <td class="text-end sf-num text-secondary">{{ produit.seuil_alerte }}</td>
                             <td class="text-end sf-num">{{ produit.prix_achat|floatformat:0|intcomma }}</td>

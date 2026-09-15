@@ -10,7 +10,7 @@ from django.urls import reverse
 from openpyxl import load_workbook
 
 from inventory import exports, services, statistiques
-from inventory.models import Categorie, Fournisseur, Mouvement, Produit
+from inventory.models import Categorie, Commande, Fournisseur, Mouvement, Produit
 
 # Backend mémoire : les emails sont collectés dans mail.outbox au lieu d'être envoyés.
 PARAMETRES_EMAIL_TEST = {
@@ -558,7 +558,7 @@ class ExportExcelTests(BaseApplicationTestCase):
         self.categorie = Categorie.objects.create(nom="Alimentation")
         self.fournisseur = Fournisseur.objects.create(nom="Fournisseur A")
         self.produit_normal = Produit.objects.create(
-            reference="EX-001", nom="Riz 25kg", categorie=self.categorie,
+            reference="EX-001", nom="Riz 25kg", unite="sac", categorie=self.categorie,
             fournisseur=self.fournisseur, prix_achat=Decimal("12000.00"),
             prix_vente=Decimal("14000.00"), quantite_stock=10, seuil_alerte=5,
         )
@@ -600,14 +600,15 @@ class ExportExcelTests(BaseApplicationTestCase):
 
         ligne_normale = lignes["EX-001"]
         self.assertEqual(feuille.cell(row=ligne_normale, column=2).value, "Riz 25kg")
-        self.assertEqual(feuille.cell(row=ligne_normale, column=3).value, "Alimentation")
-        self.assertEqual(feuille.cell(row=ligne_normale, column=4).value, "Fournisseur A")
-        self.assertEqual(feuille.cell(row=ligne_normale, column=5).value, 10)
-        self.assertEqual(feuille.cell(row=ligne_normale, column=7).value, "Stock normal")
+        self.assertEqual(feuille.cell(row=ligne_normale, column=3).value, "sac")
+        self.assertEqual(feuille.cell(row=ligne_normale, column=4).value, "Alimentation")
+        self.assertEqual(feuille.cell(row=ligne_normale, column=5).value, "Fournisseur A")
+        self.assertEqual(feuille.cell(row=ligne_normale, column=6).value, 10)
+        self.assertEqual(feuille.cell(row=ligne_normale, column=8).value, "Stock normal")
         # Valeur du stock = quantité x prix d'achat
-        self.assertEqual(feuille.cell(row=ligne_normale, column=9).value, Decimal("120000.00"))
+        self.assertEqual(feuille.cell(row=ligne_normale, column=10).value, Decimal("120000.00"))
 
-        self.assertEqual(feuille.cell(row=lignes["EX-002"], column=7).value, "Rupture")
+        self.assertEqual(feuille.cell(row=lignes["EX-002"], column=8).value, "Rupture")
 
     def test_formatage_de_base(self):
         _, classeur = self._telecharger_classeur()
@@ -621,9 +622,9 @@ class ExportExcelTests(BaseApplicationTestCase):
         # Largeur de colonne adaptée
         self.assertEqual(feuille.column_dimensions["B"].width, 34)
         # Format monétaire sur la valeur du stock
-        self.assertEqual(feuille.cell(row=5, column=9).number_format, "#,##0.00")
+        self.assertEqual(feuille.cell(row=5, column=10).number_format, "#,##0.00")
         # Statut coloré
-        self.assertNotEqual(feuille.cell(row=5, column=7).fill.fgColor.rgb, "00000000")
+        self.assertNotEqual(feuille.cell(row=5, column=8).fill.fgColor.rgb, "00000000")
         # Date de génération présente
         self.assertIn("Document", feuille["A2"].value)
 
@@ -807,13 +808,30 @@ class InitialiserGroupesTests(TestCase):
         gerant = Group.objects.get(name="Gerant")
         magasinier = Group.objects.get(name="Magasinier")
 
-        self.assertEqual(gerant.permissions.count(), 13)
-        self.assertEqual(magasinier.permissions.count(), 5)
+        # On compare aux listes déclarées par la commande plutôt qu'à des
+        # nombres en dur : ajouter une permission ne casse plus ce test.
+        from inventory.management.commands.initialiser_groupes import (
+            PERMISSIONS_GERANT,
+            PERMISSIONS_MAGASINIER,
+        )
 
+        self.assertEqual(
+            set(gerant.permissions.values_list("codename", flat=True)),
+            set(PERMISSIONS_GERANT),
+        )
         codes_magasinier = set(magasinier.permissions.values_list("codename", flat=True))
-        self.assertNotIn("acceder_tableau_bord", codes_magasinier)
-        self.assertNotIn("exporter_stock", codes_magasinier)
-        self.assertNotIn("add_produit", codes_magasinier)
+        self.assertEqual(codes_magasinier, set(PERMISSIONS_MAGASINIER))
+
+        # Les fonctions sensibles restent hors de portée du magasinier.
+        for interdit in (
+            "acceder_tableau_bord",
+            "exporter_stock",
+            "add_produit",
+            "add_commande",
+            "change_commande",
+        ):
+            with self.subTest(permission=interdit):
+                self.assertNotIn(interdit, codes_magasinier)
 
 
 @override_settings(**PARAMETRES_EMAIL_TEST)
@@ -1675,3 +1693,692 @@ class PaginationNumeroteeTests(BaseApplicationTestCase):
 
         self.assertEqual(reponse.status_code, 200)
         self.assertEqual(reponse.context["resume_pagination"], "5 produits sur 45")
+
+
+class UniteProduitTests(BaseApplicationTestCase):
+    """Unité de vente affichée à côté des quantités."""
+
+    def setUp(self):
+        creer_utilisateur("gerant", groupe="Gerant")
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+        self.categorie = Categorie.objects.create(nom="Matériaux")
+        self.avec_unite = Produit.objects.create(
+            reference="UNI-001", nom="Ciment 50kg", unite="sac", categorie=self.categorie,
+            prix_achat=Decimal("4200.00"), prix_vente=Decimal("5000.00"), quantite_stock=12,
+        )
+        self.sans_unite = Produit.objects.create(
+            reference="UNI-002", nom="Divers", categorie=self.categorie,
+            prix_achat=Decimal("100.00"), prix_vente=Decimal("150.00"), quantite_stock=3,
+        )
+
+    def test_unite_affichee_par_defaut(self):
+        self.assertEqual(self.avec_unite.unite_affichee, "sac")
+        self.assertEqual(self.sans_unite.unite_affichee, "unité")
+
+    def test_unite_sur_la_fiche_produit(self):
+        reponse = self.client.get(self.avec_unite.get_absolute_url())
+
+        self.assertEqual(reponse.status_code, 200)
+        self.assertContains(reponse, "sac")
+
+    def test_unite_dans_la_liste(self):
+        reponse = self.client.get(reverse("inventory:produit_liste"))
+        self.assertContains(reponse, "sac")
+
+    def test_unite_modifiable_par_le_formulaire(self):
+        reponse = self.client.post(
+            reverse("inventory:produit_modifier", kwargs={"pk": self.avec_unite.pk}),
+            {
+                "reference": "UNI-001", "nom": "Ciment 50kg", "unite": "palette",
+                "categorie": self.categorie.pk, "prix_achat": "4200",
+                "prix_vente": "5000", "seuil_alerte": "10", "actif": "on",
+            },
+        )
+        self.assertEqual(reponse.status_code, 302)
+        self.avec_unite.refresh_from_db()
+        self.assertEqual(self.avec_unite.unite, "palette")
+
+    def test_unite_facultative(self):
+        """Un produit sans unité reste valide."""
+        reponse = self.client.post(
+            reverse("inventory:produit_creer"),
+            {
+                "reference": "UNI-003", "nom": "Sans unité", "unite": "",
+                "categorie": self.categorie.pk, "prix_achat": "100",
+                "prix_vente": "150", "seuil_alerte": "5", "actif": "on",
+            },
+        )
+        self.assertEqual(reponse.status_code, 302)
+        self.assertTrue(Produit.objects.filter(reference="UNI-003").exists())
+
+    def test_unite_dans_l_export_excel(self):
+        reponse = self.client.get(reverse("inventory:export_stock_excel"))
+        feuille = load_workbook(BytesIO(reponse.content)).active
+
+        entetes = [cellule.value for cellule in feuille[4]]
+        self.assertIn("Unité", entetes)
+
+        colonne_unite = entetes.index("Unité") + 1
+        unites = {
+            feuille.cell(row=numero, column=colonne_unite).value
+            for numero in range(5, feuille.max_row + 1)
+        }
+        self.assertIn("sac", unites)
+
+
+class FournisseurContactTests(BaseApplicationTestCase):
+    """Contact et délai de livraison du fournisseur."""
+
+    def setUp(self):
+        creer_utilisateur("gerant", groupe="Gerant")
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+        self.categorie = Categorie.objects.create(nom="Matériaux")
+        self.fournisseur = Fournisseur.objects.create(
+            nom="SOTRACOM", contact="M. Zinsou",
+            telephone="+229 97 00 00 12", delai_jours=4,
+        )
+        self.produit = Produit.objects.create(
+            reference="FOU-001", nom="Fer à béton 8mm", unite="barre",
+            categorie=self.categorie, fournisseur=self.fournisseur,
+            prix_achat=Decimal("3400.00"), prix_vente=Decimal("4250.00"),
+            quantite_stock=300, seuil_alerte=25,
+        )
+
+    def test_contact_et_delai_sur_la_fiche(self):
+        reponse = self.client.get(self.produit.get_absolute_url())
+
+        self.assertContains(reponse, "M. Zinsou")
+        self.assertContains(reponse, "+229 97 00 00 12")
+        self.assertContains(reponse, "4 jours")
+
+    def test_champs_facultatifs(self):
+        """Un fournisseur sans contact ni délai reste valide."""
+        fournisseur = Fournisseur.objects.create(nom="Sans détails")
+
+        self.assertEqual(fournisseur.contact, "")
+        self.assertIsNone(fournisseur.delai_jours)
+
+    def test_avertissement_couverture_insuffisante(self):
+        """Stock qui ne tient pas jusqu'à la prochaine livraison."""
+        # 300 sorties sur 30 jours = 10 par jour. Reste 10 -> 1 jour de
+        # couverture, alors que le fournisseur livre en 4 jours.
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 290)
+
+        reponse = self.client.get(self.produit.get_absolute_url())
+
+        self.assertTrue(reponse.context["couverture_insuffisante"])
+        self.assertContains(reponse, "Commandez maintenant")
+
+    def test_pas_d_avertissement_si_couverture_suffisante(self):
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 30)
+
+        reponse = self.client.get(self.produit.get_absolute_url())
+        self.assertFalse(reponse.context["couverture_insuffisante"])
+
+    def test_pas_d_avertissement_sans_delai_connu(self):
+        """Sans délai renseigné, aucune conclusion possible."""
+        self.fournisseur.delai_jours = None
+        self.fournisseur.save(update_fields=["delai_jours"])
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 290)
+
+        reponse = self.client.get(self.produit.get_absolute_url())
+        self.assertFalse(reponse.context["couverture_insuffisante"])
+
+    def test_pas_d_avertissement_sans_fournisseur(self):
+        self.produit.fournisseur = None
+        self.produit.save(update_fields=["fournisseur"])
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 290)
+
+        reponse = self.client.get(self.produit.get_absolute_url())
+        self.assertFalse(reponse.context["couverture_insuffisante"])
+
+    @override_settings(**PARAMETRES_EMAIL_TEST)
+    def test_email_d_alerte_indique_qui_appeler(self):
+        """L'alerte doit dire au gérant qui contacter et sous quel délai."""
+        with self.captureOnCommitCallbacks(execute=True):
+            services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 280)
+
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        corps_html = message.alternatives[0][0]
+
+        self.assertIn("SOTRACOM", corps_html)
+        self.assertIn("M. Zinsou", corps_html)
+        self.assertIn("+229 97 00 00 12", corps_html)
+        self.assertIn("4 jours", corps_html)
+
+        # La version texte porte la même information.
+        self.assertIn("SOTRACOM", message.body)
+        self.assertIn("M. Zinsou", message.body)
+
+    @override_settings(**PARAMETRES_EMAIL_TEST)
+    def test_email_d_alerte_sans_fournisseur(self):
+        """Un produit sans fournisseur ne casse pas l'email."""
+        self.produit.fournisseur = None
+        self.produit.save(update_fields=["fournisseur"])
+
+        with self.captureOnCommitCallbacks(execute=True):
+            services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 280)
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertNotIn("SOTRACOM", mail.outbox[0].alternatives[0][0])
+
+
+class SeedDonneesTests(TestCase):
+    """La commande seed renseigne unités et coordonnées fournisseurs."""
+
+    def test_seed_remplit_les_nouveaux_champs(self):
+        call_command("seed", verbosity=0)
+
+        self.assertEqual(Produit.objects.count(), 25)
+        self.assertEqual(Fournisseur.objects.count(), 4)
+
+        # Chaque produit a une unité.
+        self.assertFalse(Produit.objects.filter(unite="").exists())
+
+        # Chaque fournisseur a un contact et un délai.
+        self.assertFalse(Fournisseur.objects.filter(contact="").exists())
+        self.assertFalse(Fournisseur.objects.filter(delai_jours__isnull=True).exists())
+
+        riz = Produit.objects.get(reference="ALI-001")
+        self.assertEqual(riz.unite, "sac")
+
+
+class CommandeServiceTests(BaseApplicationTestCase):
+    """Cycle de vie d'une commande, côté service."""
+
+    def setUp(self):
+        self.gerant = creer_utilisateur("gerant", groupe="Gerant")
+        self.fournisseur = Fournisseur.objects.create(
+            nom="SOTRACOM", contact="M. Zinsou", delai_jours=4
+        )
+        self.categorie = Categorie.objects.create(nom="Matériaux")
+        self.produit = Produit.objects.create(
+            reference="CMD-P1", nom="Fer à béton", unite="barre",
+            categorie=self.categorie, fournisseur=self.fournisseur,
+            prix_achat=Decimal("3400.00"), prix_vente=Decimal("4250.00"),
+            quantite_stock=10, seuil_alerte=25,
+        )
+        self.autre_produit = Produit.objects.create(
+            reference="CMD-P2", nom="Ciment", unite="sac",
+            categorie=self.categorie, fournisseur=self.fournisseur,
+            prix_achat=Decimal("4200.00"), prix_vente=Decimal("5000.00"),
+            quantite_stock=0, seuil_alerte=20,
+        )
+
+    def _commande_avec_ligne(self, quantite=100):
+        commande = services.creer_commande(self.fournisseur, utilisateur=self.gerant)
+        services.ajouter_ligne_commande(commande, self.produit, quantite)
+        return commande
+
+    def test_reference_generee(self):
+        premiere = services.creer_commande(self.fournisseur)
+        seconde = services.creer_commande(self.fournisseur)
+
+        self.assertTrue(premiere.reference.startswith("CMD-"))
+        self.assertNotEqual(premiere.reference, seconde.reference)
+
+    def test_commande_ouverte_en_brouillon(self):
+        commande = services.creer_commande(self.fournisseur, utilisateur=self.gerant)
+
+        self.assertEqual(commande.statut, Commande.BROUILLON)
+        self.assertTrue(commande.modifiable)
+        self.assertFalse(commande.receptionnable)
+        self.assertEqual(commande.cree_par, self.gerant)
+
+    def test_ajout_de_ligne_fige_le_prix(self):
+        commande = self._commande_avec_ligne()
+        ligne = commande.lignes.get()
+
+        self.assertEqual(ligne.prix_unitaire, Decimal("3400.00"))
+
+        # Le prix du produit change : la commande garde son prix.
+        self.produit.prix_achat = Decimal("5000.00")
+        self.produit.save(update_fields=["prix_achat"])
+        ligne.refresh_from_db()
+        self.assertEqual(ligne.prix_unitaire, Decimal("3400.00"))
+
+    def test_prix_negocie(self):
+        commande = services.creer_commande(self.fournisseur)
+        ligne = services.ajouter_ligne_commande(
+            commande, self.produit, 10, prix_unitaire=Decimal("3000.00")
+        )
+        self.assertEqual(ligne.prix_unitaire, Decimal("3000.00"))
+
+    def test_montant_total(self):
+        commande = services.creer_commande(self.fournisseur)
+        services.ajouter_ligne_commande(commande, self.produit, 10)       # 34 000
+        services.ajouter_ligne_commande(commande, self.autre_produit, 5)  # 21 000
+
+        self.assertEqual(commande.montant_total, Decimal("55000.00"))
+
+    def test_produit_en_double_refuse(self):
+        commande = self._commande_avec_ligne()
+
+        with self.assertRaises(ValidationError):
+            services.ajouter_ligne_commande(commande, self.produit, 50)
+        self.assertEqual(commande.lignes.count(), 1)
+
+    def test_quantite_invalide_refusee(self):
+        commande = services.creer_commande(self.fournisseur)
+
+        for quantite in (0, -5):
+            with self.subTest(quantite=quantite):
+                with self.assertRaises(ValidationError):
+                    services.ajouter_ligne_commande(commande, self.produit, quantite)
+
+    def test_envoi_fige_la_commande(self):
+        commande = self._commande_avec_ligne()
+        services.envoyer_commande(commande)
+
+        self.assertEqual(commande.statut, Commande.ENVOYEE)
+        self.assertIsNotNone(commande.date_envoi)
+        self.assertFalse(commande.modifiable)
+        self.assertTrue(commande.receptionnable)
+
+        with self.assertRaises(ValidationError):
+            services.ajouter_ligne_commande(commande, self.autre_produit, 10)
+
+    def test_commande_vide_non_envoyable(self):
+        commande = services.creer_commande(self.fournisseur)
+
+        with self.assertRaises(ValidationError):
+            services.envoyer_commande(commande)
+        self.assertEqual(commande.statut, Commande.BROUILLON)
+
+    def test_double_envoi_refuse(self):
+        commande = self._commande_avec_ligne()
+        services.envoyer_commande(commande)
+
+        with self.assertRaises(ValidationError):
+            services.envoyer_commande(commande)
+
+    def test_retrait_de_ligne_en_brouillon(self):
+        commande = self._commande_avec_ligne()
+        services.retirer_ligne_commande(commande.lignes.get())
+
+        self.assertEqual(commande.lignes.count(), 0)
+
+    def test_retrait_impossible_apres_envoi(self):
+        commande = self._commande_avec_ligne()
+        services.envoyer_commande(commande)
+
+        with self.assertRaises(ValidationError):
+            services.retirer_ligne_commande(commande.lignes.get())
+        self.assertEqual(commande.lignes.count(), 1)
+
+    def test_date_livraison_prevue(self):
+        commande = self._commande_avec_ligne()
+        services.envoyer_commande(commande)
+
+        prevue = commande.date_livraison_prevue
+        self.assertIsNotNone(prevue)
+        self.assertEqual((prevue - commande.date_envoi).days, 4)
+
+    def test_pas_de_date_prevue_sans_delai(self):
+        self.fournisseur.delai_jours = None
+        self.fournisseur.save(update_fields=["delai_jours"])
+        commande = self._commande_avec_ligne()
+        services.envoyer_commande(commande)
+
+        self.assertIsNone(commande.date_livraison_prevue)
+
+    def test_annulation(self):
+        commande = self._commande_avec_ligne()
+        services.annuler_commande(commande)
+
+        self.assertEqual(commande.statut, Commande.ANNULEE)
+        # Rien n'est effacé : la commande reste consultable.
+        self.assertTrue(Commande.objects.filter(pk=commande.pk).exists())
+
+    def test_annulation_impossible_apres_reception_partielle(self):
+        commande = self._commande_avec_ligne()
+        services.envoyer_commande(commande)
+        services.receptionner_ligne_commande(commande.lignes.get(), 10)
+
+        with self.assertRaises(ValidationError):
+            services.annuler_commande(commande)
+
+
+class ReceptionCommandeTests(BaseApplicationTestCase):
+    """La réception crée le stock : c'est le point le plus sensible."""
+
+    def setUp(self):
+        self.gerant = creer_utilisateur("gerant", groupe="Gerant")
+        self.magasinier = creer_utilisateur("magasinier", groupe="Magasinier")
+        self.fournisseur = Fournisseur.objects.create(nom="SOTRACOM", delai_jours=4)
+        self.categorie = Categorie.objects.create(nom="Matériaux")
+        self.produit = Produit.objects.create(
+            reference="REC-001", nom="Fer à béton", unite="barre",
+            categorie=self.categorie, fournisseur=self.fournisseur,
+            prix_achat=Decimal("3400.00"), prix_vente=Decimal("4250.00"),
+            quantite_stock=10, seuil_alerte=25,
+        )
+        self.commande = services.creer_commande(self.fournisseur, utilisateur=self.gerant)
+        self.ligne = services.ajouter_ligne_commande(self.commande, self.produit, 100)
+        services.envoyer_commande(self.commande)
+
+    def test_reception_complete(self):
+        mouvement = services.receptionner_ligne_commande(
+            self.ligne, 100, utilisateur=self.magasinier
+        )
+
+        self.produit.refresh_from_db()
+        self.ligne.refresh_from_db()
+        self.commande.refresh_from_db()
+
+        self.assertEqual(self.produit.quantite_stock, 110)  # 10 + 100
+        self.assertEqual(self.ligne.quantite_recue, 100)
+        self.assertTrue(self.ligne.soldee)
+        self.assertEqual(self.commande.statut, Commande.RECUE)
+        self.assertIsNotNone(self.commande.date_reception)
+
+        # Le mouvement est une entrée tracée, rattachée à la commande.
+        self.assertEqual(mouvement.type_mouvement, Mouvement.ENTREE)
+        self.assertEqual(mouvement.quantite, 100)
+        self.assertEqual(mouvement.document, self.commande.reference)
+        self.assertEqual(mouvement.utilisateur, self.magasinier)
+        self.assertEqual(mouvement.ligne_commande, self.ligne)
+        self.assertEqual(mouvement.stock_apres, 110)
+
+    def test_livraison_partielle(self):
+        services.receptionner_ligne_commande(self.ligne, 40)
+
+        self.produit.refresh_from_db()
+        self.ligne.refresh_from_db()
+        self.commande.refresh_from_db()
+
+        self.assertEqual(self.produit.quantite_stock, 50)
+        self.assertEqual(self.ligne.quantite_recue, 40)
+        self.assertEqual(self.ligne.quantite_restante, 60)
+        self.assertFalse(self.ligne.soldee)
+        self.assertEqual(self.commande.statut, Commande.PARTIELLE)
+        self.assertIsNone(self.commande.date_reception)
+
+    def test_livraisons_successives_soldent_la_commande(self):
+        services.receptionner_ligne_commande(self.ligne, 40)
+        services.receptionner_ligne_commande(self.ligne, 60)
+
+        self.produit.refresh_from_db()
+        self.commande.refresh_from_db()
+
+        self.assertEqual(self.produit.quantite_stock, 110)
+        self.assertEqual(self.commande.statut, Commande.RECUE)
+        self.assertEqual(Mouvement.objects.filter(type_mouvement=Mouvement.ENTREE).count(), 2)
+
+    def test_reception_superieure_au_reste_refusee(self):
+        with self.assertRaises(ValidationError):
+            services.receptionner_ligne_commande(self.ligne, 150)
+
+        self.produit.refresh_from_db()
+        self.ligne.refresh_from_db()
+        self.assertEqual(self.produit.quantite_stock, 10)  # inchangé
+        self.assertEqual(self.ligne.quantite_recue, 0)
+        self.assertEqual(Mouvement.objects.count(), 0)
+
+    def test_reception_quantite_nulle_refusee(self):
+        with self.assertRaises(ValidationError):
+            services.receptionner_ligne_commande(self.ligne, 0)
+        self.assertEqual(Mouvement.objects.count(), 0)
+
+    def test_reception_impossible_sur_un_brouillon(self):
+        brouillon = services.creer_commande(self.fournisseur)
+        ligne = services.ajouter_ligne_commande(brouillon, self.produit, 10)
+
+        with self.assertRaises(ValidationError):
+            services.receptionner_ligne_commande(ligne, 5)
+
+        self.produit.refresh_from_db()
+        self.assertEqual(self.produit.quantite_stock, 10)
+
+    def test_reception_impossible_sur_commande_soldee(self):
+        services.receptionner_ligne_commande(self.ligne, 100)
+
+        with self.assertRaises(ValidationError):
+            services.receptionner_ligne_commande(self.ligne, 1)
+
+    def test_commande_a_plusieurs_lignes(self):
+        """La commande ne se solde qu'une fois TOUTES les lignes livrées."""
+        autre = Produit.objects.create(
+            reference="REC-002", nom="Ciment", categorie=self.categorie,
+            fournisseur=self.fournisseur, prix_achat=Decimal("4200.00"),
+            prix_vente=Decimal("5000.00"), quantite_stock=0, seuil_alerte=20,
+        )
+        commande = services.creer_commande(self.fournisseur)
+        ligne_a = services.ajouter_ligne_commande(commande, self.produit, 10)
+        ligne_b = services.ajouter_ligne_commande(commande, autre, 20)
+        services.envoyer_commande(commande)
+
+        services.receptionner_ligne_commande(ligne_a, 10)
+        commande.refresh_from_db()
+        self.assertEqual(commande.statut, Commande.PARTIELLE)
+
+        services.receptionner_ligne_commande(ligne_b, 20)
+        commande.refresh_from_db()
+        self.assertEqual(commande.statut, Commande.RECUE)
+
+    def test_reception_apparait_dans_l_historique(self):
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+        services.receptionner_ligne_commande(self.ligne, 100, utilisateur=self.magasinier)
+
+        reponse = self.client.get(
+            reverse("inventory:mouvement_liste"), {"q": self.commande.reference}
+        )
+        mouvements = list(reponse.context["mouvements"])
+
+        self.assertEqual(len(mouvements), 1)
+        self.assertEqual(mouvements[0].motif, "Réception de commande")
+
+    @override_settings(**PARAMETRES_EMAIL_TEST)
+    def test_reception_n_envoie_aucune_alerte(self):
+        """Une entrée ne déclenche jamais d'alerte de stock bas."""
+        with self.captureOnCommitCallbacks(execute=True):
+            services.receptionner_ligne_commande(self.ligne, 100)
+
+        self.assertEqual(len(mail.outbox), 0)
+
+
+class CommandeVuesTests(BaseApplicationTestCase):
+    """Parcours complet d'une commande dans l'interface."""
+
+    def setUp(self):
+        self.gerant = creer_utilisateur("gerant", groupe="Gerant")
+        self.magasinier = creer_utilisateur("magasinier", groupe="Magasinier")
+        self.fournisseur = Fournisseur.objects.create(nom="SOTRACOM", delai_jours=4)
+        self.categorie = Categorie.objects.create(nom="Matériaux")
+        self.produit = Produit.objects.create(
+            reference="VUE-001", nom="Fer à béton", unite="barre",
+            categorie=self.categorie, fournisseur=self.fournisseur,
+            prix_achat=Decimal("3400.00"), prix_vente=Decimal("4250.00"),
+            quantite_stock=10, seuil_alerte=25,
+        )
+
+    def test_parcours_complet(self):
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+
+        # 1. Ouverture de la commande
+        reponse = self.client.post(
+            reverse("inventory:commande_creer"),
+            {"fournisseur": self.fournisseur.pk, "commentaire": "Réassort urgent"},
+        )
+        self.assertEqual(reponse.status_code, 302)
+        commande = Commande.objects.get()
+        self.assertEqual(commande.statut, Commande.BROUILLON)
+        self.assertEqual(commande.cree_par, self.gerant)
+
+        # 2. Ajout d'une ligne
+        reponse = self.client.post(
+            reverse("inventory:commande_ajouter_ligne", kwargs={"pk": commande.pk}),
+            {"produit": self.produit.pk, "quantite": "100", "prix_unitaire": ""},
+        )
+        self.assertEqual(reponse.status_code, 302)
+        self.assertEqual(commande.lignes.count(), 1)
+
+        # 3. Envoi
+        reponse = self.client.post(
+            reverse("inventory:commande_envoyer", kwargs={"pk": commande.pk})
+        )
+        commande.refresh_from_db()
+        self.assertEqual(commande.statut, Commande.ENVOYEE)
+
+        # 4. Réception partielle
+        ligne = commande.lignes.get()
+        reponse = self.client.post(
+            reverse("inventory:ligne_receptionner", kwargs={"pk": ligne.pk}),
+            {"quantite": "40"},
+        )
+        self.assertEqual(reponse.status_code, 302)
+        commande.refresh_from_db()
+        self.produit.refresh_from_db()
+        self.assertEqual(commande.statut, Commande.PARTIELLE)
+        self.assertEqual(self.produit.quantite_stock, 50)
+
+        # 5. Solde
+        self.client.post(
+            reverse("inventory:ligne_receptionner", kwargs={"pk": ligne.pk}),
+            {"quantite": "60"},
+        )
+        commande.refresh_from_db()
+        self.produit.refresh_from_db()
+        self.assertEqual(commande.statut, Commande.RECUE)
+        self.assertEqual(self.produit.quantite_stock, 110)
+
+    def test_bouton_commander_depuis_la_fiche_produit(self):
+        """Le bouton pré-remplit fournisseur et première ligne."""
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+
+        reponse = self.client.post(
+            reverse("inventory:commande_creer") + f"?produit={self.produit.pk}&quantite=120",
+            {"fournisseur": self.fournisseur.pk, "commentaire": ""},
+        )
+        self.assertEqual(reponse.status_code, 302)
+
+        commande = Commande.objects.get()
+        ligne = commande.lignes.get()
+        self.assertEqual(ligne.produit, self.produit)
+        self.assertEqual(ligne.quantite_commandee, 120)
+
+    def test_quantite_conseillee_sur_la_fiche(self):
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+        reponse = self.client.get(self.produit.get_absolute_url())
+
+        self.assertGreater(reponse.context["stats"]["quantite_conseillee"], 0)
+        self.assertContains(reponse, "Commander")
+
+    def test_erreur_metier_affichee(self):
+        """Une commande vide envoyée : message clair, pas de 500."""
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+        commande = services.creer_commande(self.fournisseur)
+
+        reponse = self.client.post(
+            reverse("inventory:commande_envoyer", kwargs={"pk": commande.pk}),
+            follow=True,
+        )
+        self.assertEqual(reponse.status_code, 200)
+        commande.refresh_from_db()
+        self.assertEqual(commande.statut, Commande.BROUILLON)
+        self.assertContains(reponse, "vide")
+
+    def test_liste_filtrable_par_statut(self):
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+        brouillon = services.creer_commande(self.fournisseur)
+        envoyee = services.creer_commande(self.fournisseur)
+        services.ajouter_ligne_commande(envoyee, self.produit, 10)
+        services.envoyer_commande(envoyee)
+
+        reponse = self.client.get(
+            reverse("inventory:commande_liste"), {"statut": Commande.ENVOYEE}
+        )
+        self.assertEqual(list(reponse.context["commandes"]), [envoyee])
+
+    def test_actions_refusees_en_get(self):
+        """Changer un état par un simple lien doit être impossible."""
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+        commande = services.creer_commande(self.fournisseur)
+        services.ajouter_ligne_commande(commande, self.produit, 10)
+
+        reponse = self.client.get(
+            reverse("inventory:commande_envoyer", kwargs={"pk": commande.pk})
+        )
+        self.assertEqual(reponse.status_code, 405)  # méthode non autorisée
+        commande.refresh_from_db()
+        self.assertEqual(commande.statut, Commande.BROUILLON)
+
+
+class PermissionsCommandeTests(BaseApplicationTestCase):
+    """Le magasinier réceptionne mais ne passe pas les commandes."""
+
+    def setUp(self):
+        creer_utilisateur("gerant", groupe="Gerant")
+        creer_utilisateur("magasinier", groupe="Magasinier")
+        self.fournisseur = Fournisseur.objects.create(nom="SOTRACOM")
+        self.categorie = Categorie.objects.create(nom="Matériaux")
+        self.produit = Produit.objects.create(
+            reference="PER-C1", nom="Fer", categorie=self.categorie,
+            fournisseur=self.fournisseur, prix_achat=Decimal("100.00"),
+            prix_vente=Decimal("150.00"), quantite_stock=0, seuil_alerte=5,
+        )
+        self.commande = services.creer_commande(self.fournisseur)
+        self.ligne = services.ajouter_ligne_commande(self.commande, self.produit, 50)
+        services.envoyer_commande(self.commande)
+
+    def test_gerant_accede_a_tout(self):
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+
+        for url in [
+            reverse("inventory:commande_liste"),
+            reverse("inventory:commande_creer"),
+            reverse("inventory:commande_detail", kwargs={"pk": self.commande.pk}),
+        ]:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 200)
+
+    def test_magasinier_consulte_les_commandes(self):
+        self.client.login(username="magasinier", password=MOT_DE_PASSE_TEST)
+
+        for url in [
+            reverse("inventory:commande_liste"),
+            reverse("inventory:commande_detail", kwargs={"pk": self.commande.pk}),
+        ]:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 200)
+
+    def test_magasinier_ne_peut_pas_creer_de_commande(self):
+        self.client.login(username="magasinier", password=MOT_DE_PASSE_TEST)
+
+        self.assertEqual(
+            self.client.get(reverse("inventory:commande_creer")).status_code, 403
+        )
+        reponse = self.client.post(
+            reverse("inventory:commande_creer"), {"fournisseur": self.fournisseur.pk}
+        )
+        self.assertEqual(reponse.status_code, 403)
+        self.assertEqual(Commande.objects.count(), 1)
+
+    def test_magasinier_ne_peut_pas_envoyer_ni_annuler(self):
+        self.client.login(username="magasinier", password=MOT_DE_PASSE_TEST)
+
+        for nom in ("inventory:commande_envoyer", "inventory:commande_annuler"):
+            with self.subTest(nom=nom):
+                reponse = self.client.post(reverse(nom, kwargs={"pk": self.commande.pk}))
+                self.assertEqual(reponse.status_code, 403)
+
+    def test_magasinier_peut_receptionner(self):
+        self.client.login(username="magasinier", password=MOT_DE_PASSE_TEST)
+
+        reponse = self.client.post(
+            reverse("inventory:ligne_receptionner", kwargs={"pk": self.ligne.pk}),
+            {"quantite": "50"},
+        )
+        self.assertEqual(reponse.status_code, 302)
+
+        self.produit.refresh_from_db()
+        self.assertEqual(self.produit.quantite_stock, 50)
+
+    def test_utilisateur_sans_role_na_acces_a_rien(self):
+        creer_utilisateur("sans_role")
+        self.client.login(username="sans_role", password=MOT_DE_PASSE_TEST)
+
+        self.assertEqual(
+            self.client.get(reverse("inventory:commande_liste")).status_code, 403
+        )

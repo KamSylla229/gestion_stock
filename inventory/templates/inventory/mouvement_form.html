@@ -89,8 +89,10 @@
                         {{ produit_selectionne.quantite_stock }}
                     </div>
                     <div class="sf-kpi-note">
-                        {{ produit_selectionne.nom }} · seuil d'alerte {{ produit_selectionne.seuil_alerte }}
+                        {{ produit_selectionne.unite_affichee }}{{ produit_selectionne.quantite_stock|pluralize }}
+                        · seuil d'alerte {{ produit_selectionne.seuil_alerte }}
                     </div>
+                    <div class="sf-kpi-note">{{ produit_selectionne.nom }}</div>
                 </div>
                 <table class="sf-table">
                     <tbody>

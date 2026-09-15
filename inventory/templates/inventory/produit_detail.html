@@ -33,6 +33,10 @@
             <a href="{% url 'inventory:sortie_stock' %}?produit={{ produit.pk }}" class="btn sf-btn-danger">Sortie</a>
             <a href="{% url 'inventory:ajustement_stock' %}?produit={{ produit.pk }}" class="btn sf-btn-secondaire">Ajustement</a>
         {% endif %}
+        {% if perms.inventory.add_commande and produit.fournisseur %}
+            <a href="{% url 'inventory:commande_creer' %}?produit={{ produit.pk }}&amp;quantite={{ stats.quantite_conseillee }}"
+               class="btn sf-btn-principal">Commander {{ stats.quantite_conseillee }}</a>
+        {% endif %}
     </div>
 </div>
 
@@ -41,7 +45,9 @@
     <div class="col-12 col-sm-6 col-xl-3">
         <div class="sf-kpi">
             <div class="sf-kpi-label">Stock actuel</div>
-            <div class="sf-kpi-valeur {% if produit.stock_bas %}sf-alerte{% endif %}">{{ produit.quantite_stock }}</div>
+            <div class="sf-kpi-valeur {% if produit.stock_bas %}sf-alerte{% endif %}">
+                {{ produit.quantite_stock|intcomma }}<span class="sf-unite">{{ produit.unite_affichee }}</span>
+            </div>
             <div class="sf-kpi-note">seuil d'alerte : {{ produit.seuil_alerte }}</div>
         </div>
     </div>
@@ -95,6 +101,7 @@
                 <tbody>
                     <tr><td class="text-secondary">Référence</td><td class="text-end sf-ref">{{ produit.reference }}</td></tr>
                     <tr><td class="text-secondary">Catégorie</td><td class="text-end">{{ produit.categorie.nom }}</td></tr>
+                    <tr><td class="text-secondary">Unité</td><td class="text-end">{{ produit.unite|default:"non renseignée" }}</td></tr>
                     <tr><td class="text-secondary">Prix d'achat</td><td class="text-end sf-num">{{ produit.prix_achat|floatformat:0|intcomma }} F</td></tr>
                     <tr><td class="text-secondary">Prix de vente</td><td class="text-end sf-num">{{ produit.prix_vente|floatformat:0|intcomma }} F</td></tr>
                     <tr>
@@ -122,9 +129,16 @@
                 <table class="sf-table">
                     <tbody>
                         <tr><td class="text-secondary">Nom</td><td class="text-end">{{ produit.fournisseur.nom }}</td></tr>
+                        <tr><td class="text-secondary">Contact</td><td class="text-end">{{ produit.fournisseur.contact|default:"—" }}</td></tr>
                         <tr><td class="text-secondary">Téléphone</td><td class="text-end sf-num">{{ produit.fournisseur.telephone|default:"—" }}</td></tr>
                         <tr><td class="text-secondary">Email</td><td class="text-end">{{ produit.fournisseur.email|default:"—" }}</td></tr>
                         <tr><td class="text-secondary">Adresse</td><td class="text-end">{{ produit.fournisseur.adresse|default:"—" }}</td></tr>
+                        <tr>
+                            <td class="text-secondary">Délai habituel</td>
+                            <td class="text-end sf-num">
+                                {% if produit.fournisseur.delai_jours %}{{ produit.fournisseur.delai_jours }} jours{% else %}—{% endif %}
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             {% else %}
@@ -133,12 +147,20 @@
                     <p class="mb-0">Renseignez-le pour savoir qui contacter en cas de rupture.</p>
                 </div>
             {% endif %}
-            {% if produit.stock_bas or stats.franchissements_seuil > 1 %}
+            {% if produit.stock_bas or stats.franchissements_seuil > 1 or couverture_insuffisante %}
                 <div class="px-3 pb-3 d-flex flex-column gap-2">
                     {% if produit.stock_bas %}
                         <div class="sf-note sf-note-ambre">
                             Stock au niveau ou sous le seuil d'alerte ({{ produit.seuil_alerte }}).
                             Le gérant a été prévenu par email au franchissement du seuil.
+                        </div>
+                    {% endif %}
+                    {% if couverture_insuffisante %}
+                        <div class="sf-note sf-note-rouge">
+                            Il reste {{ stats.couverture }} jours de stock, mais
+                            {{ produit.fournisseur.nom }} livre en
+                            {{ produit.fournisseur.delai_jours }} jours.
+                            Commandez maintenant pour éviter la rupture.
                         </div>
                     {% endif %}
                     {% if stats.franchissements_seuil > 1 %}

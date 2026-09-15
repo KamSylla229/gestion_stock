@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block titre %}Commandes — StockFlow{% endblock %}
+
+{% block contenu %}
+<div class="sf-entete">
+    <div>
+        <h1 class="sf-titre">Commandes fournisseurs</h1>
+        <p class="sf-sous-titre">{{ page_obj.paginator.count|intcomma }} commande{{ page_obj.paginator.count|pluralize }}</p>
+    </div>
+    {% if perms.inventory.add_commande %}
+        <a href="{% url 'inventory:commande_creer' %}" class="btn sf-btn-principal">+ Nouvelle commande</a>
+    {% endif %}
+</div>
+
+<div class="sf-carte mb-3">
+    <div class="sf-carte-corps">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-12 col-lg-4">
+                <select name="fournisseur" class="form-select" aria-label="Fournisseur">
+                    <option value="">Tous les fournisseurs</option>
+                    {% for fournisseur in fournisseurs %}
+                        <option value="{{ fournisseur.pk }}" {% if filtres.fournisseur == fournisseur.pk|stringformat:"s" %}selected{% endif %}>{{ fournisseur.nom }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-lg-3">
+                <select name="statut" class="form-select" aria-label="Statut">
+                    <option value="">Tous les statuts</option>
+                    {% for valeur, libelle in statuts %}
+                        <option value="{{ valeur }}" {% if filtres.statut == valeur %}selected{% endif %}>{{ libelle }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-lg-3 d-flex gap-2">
+                <button type="submit" class="btn sf-btn-secondaire flex-grow-1">Filtrer</button>
+                <a href="{% url 'inventory:commande_liste' %}" class="btn sf-btn-secondaire">Effacer</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="sf-carte">
+    {% if commandes %}
+        <div class="table-responsive">
+            <table class="sf-table">
+                <thead>
+                    <tr>
+                        <th>Référence</th>
+                        <th>Fournisseur</th>
+                        <th>Statut</th>
+                        <th class="text-end sf-num">Lignes</th>
+                        <th class="text-end sf-num">Montant</th>
+                        <th>Créée le</th>
+                        <th>Par</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for commande in commandes %}
+                        <tr>
+                            <td><a href="{{ commande.get_absolute_url }}" class="sf-ref">{{ commande.reference }}</a></td>
+                            <td>{{ commande.fournisseur.nom }}</td>
+                            <td>{% include "inventory/_badge_commande.html" %}</td>
+                            <td class="text-end sf-num">{{ commande.lignes.count }}</td>
+                            <td class="text-end sf-num">{{ commande.montant_total|floatformat:0|intcomma }} F</td>
+                            <td class="sf-num text-nowrap">{{ commande.date_creation|date:"d/m/Y" }}</td>
+                            <td class="text-secondary">{{ commande.cree_par.username|default:"—" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if is_paginated %}
+            {% include "inventory/_pagination.html" with resume=resume_pagination %}
+        {% endif %}
+    {% else %}
+        <div class="sf-vide">
+            {% if filtres.statut or filtres.fournisseur %}
+                <div class="sf-vide-titre">Aucune commande ne correspond à ces filtres</div>
+                <p>Essayez un autre statut ou un autre fournisseur.</p>
+                <a href="{% url 'inventory:commande_liste' %}" class="btn btn-sm sf-btn-secondaire">Effacer les filtres</a>
+            {% else %}
+                <div class="sf-vide-titre">Aucune commande enregistrée</div>
+                <p>Passez votre première commande à un fournisseur.</p>
+                {% if perms.inventory.add_commande %}
+                    <a href="{% url 'inventory:commande_creer' %}" class="btn btn-sm sf-btn-principal">Nouvelle commande</a>
+                {% endif %}
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

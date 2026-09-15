@@ -192,7 +192,26 @@ def statistiques_produit(produit, jours: int = 30) -> dict:
         "couverture": couverture,
         "derniere_entree": derniere_entree,
         "franchissements_seuil": compter_franchissements_seuil(produit, depuis),
+        "quantite_conseillee": quantite_a_commander(produit, moyenne, jours),
     }
+
+
+def quantite_a_commander(produit, sorties_moyenne: float, jours: int) -> int:
+    """
+    Quantité proposée par le bouton « Commander ».
+
+    Objectif : couvrir un mois de consommation, en tenant compte de ce qui
+    reste en stock. À défaut d'historique de sortie, on vise le double du
+    seuil d'alerte, qui est le niveau que le gérant a lui-même jugé confortable.
+    """
+    if sorties_moyenne:
+        besoin = round(sorties_moyenne * 30)
+    else:
+        besoin = produit.seuil_alerte * 2
+
+    a_commander = besoin - produit.quantite_stock
+    # Jamais de proposition nulle ou négative : on repart au moins du seuil.
+    return max(a_commander, produit.seuil_alerte, 1)
 
 
 def compter_franchissements_seuil(produit, depuis) -> int:
