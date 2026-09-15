@@ -10,18 +10,16 @@
             {{ page_obj.paginator.count }} mouvement{{ page_obj.paginator.count|pluralize }} enregistré{{ page_obj.paginator.count|pluralize }} · aucune suppression possible
         </p>
     </div>
-    {% if perms.inventory.exporter_stock %}
-        <a href="{% url 'inventory:export_stock_excel' %}" class="btn sf-btn-secondaire">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
-            Exporter le stock
-        </a>
-    {% endif %}
 </div>
 
 <div class="sf-carte mb-3">
     <div class="sf-carte-corps">
         <form method="get" class="row g-2 align-items-center">
-            <div class="col-12 col-lg-4">
+            <div class="col-12 col-lg-3">
+                <input type="text" name="q" class="form-control" placeholder="Produit ou référence de bon"
+                       value="{{ filtres.q|default:'' }}" aria-label="Rechercher">
+            </div>
+            <div class="col-6 col-lg-2">
                 <select name="produit" class="form-select" aria-label="Produit">
                     <option value="">Tous les produits</option>
                     {% for produit in produits %}
@@ -38,15 +36,21 @@
                 </select>
             </div>
             <div class="col-6 col-lg-2">
+                <select name="utilisateur" class="form-select" aria-label="Utilisateur">
+                    <option value="">Tous les utilisateurs</option>
+                    {% for utilisateur in utilisateurs %}
+                        <option value="{{ utilisateur.pk }}" {% if filtres.utilisateur == utilisateur.pk|stringformat:"s" %}selected{% endif %}>{{ utilisateur.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-lg-3 d-flex gap-2">
                 <input type="date" name="date_debut" class="form-control" aria-label="Date de début"
                        value="{{ filtres.date_debut|default:'' }}">
-            </div>
-            <div class="col-6 col-lg-2">
                 <input type="date" name="date_fin" class="form-control" aria-label="Date de fin"
                        value="{{ filtres.date_fin|default:'' }}">
             </div>
-            <div class="col-6 col-lg-2 d-flex gap-2">
-                <button type="submit" class="btn sf-btn-principal flex-grow-1">Appliquer</button>
+            <div class="col-12 d-flex gap-2 pt-1">
+                <button type="submit" class="btn sf-btn-principal">Appliquer</button>
                 <a href="{% url 'inventory:mouvement_liste' %}" class="btn sf-btn-secondaire">Effacer</a>
             </div>
         </form>
@@ -62,9 +66,12 @@
                         <th>Date</th>
                         <th>Produit</th>
                         <th>Type</th>
-                        <th class="text-end sf-num">Quantité</th>
-                        <th class="text-end sf-num">Stock actuel</th>
+                        <th class="text-end sf-num">Qté</th>
+                        <th class="text-end sf-num">Stock après</th>
                         <th>Motif</th>
+                        <th>Document</th>
+                        <th class="text-end sf-num">Valeur</th>
+                        <th>Utilisateur</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -75,16 +82,20 @@
                                 <a href="{{ mouvement.produit.get_absolute_url }}">{{ mouvement.produit.nom }}</a>
                                 <div class="sf-ref">{{ mouvement.produit.reference }}</div>
                             </td>
-                            <td>
-                                {% if mouvement.type_mouvement == "ENTREE" %}
-                                    <span class="sf-badge sf-badge-vert">Entrée</span>
-                                {% else %}
-                                    <span class="sf-badge sf-badge-rouge">Sortie</span>
+                            <td>{% include "inventory/_badge_mouvement.html" %}</td>
+                            <td class="text-end sf-num fw-semibold">{{ mouvement.quantite }}</td>
+                            <td class="text-end sf-num {% if mouvement.stock_apres == 0 %}text-danger fw-semibold{% endif %}">
+                                {{ mouvement.stock_apres|default_if_none:"—" }}
+                            </td>
+                            <td class="text-secondary">
+                                {{ mouvement.motif|default:"—" }}
+                                {% if mouvement.destination %}
+                                    <div class="sf-ref">{{ mouvement.destination }}</div>
                                 {% endif %}
                             </td>
-                            <td class="text-end sf-num fw-semibold">{{ mouvement.quantite }}</td>
-                            <td class="text-end sf-num text-secondary">{{ mouvement.produit.quantite_stock }}</td>
-                            <td class="text-secondary">{{ mouvement.motif|default:"—" }}</td>
+                            <td class="sf-ref">{{ mouvement.document|default:"—" }}</td>
+                            <td class="text-end sf-num text-secondary">{{ mouvement.valeur|floatformat:0 }}</td>
+                            <td class="text-secondary">{{ mouvement.utilisateur.username|default:"—" }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -95,7 +106,6 @@
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 py-2 border-top">
                 <span class="sf-kpi-note m-0">
                     {{ mouvements|length }} mouvement{{ mouvements|length|pluralize }} sur {{ page_obj.paginator.count }}
-                    {% if filtres %}· période filtrée{% endif %}
                 </span>
                 <ul class="pagination pagination-sm mb-0">
                     {% if page_obj.has_previous %}
@@ -110,9 +120,9 @@
         {% endif %}
     {% else %}
         <div class="sf-vide">
-            {% if filtres.produit or filtres.type or filtres.date_debut or filtres.date_fin %}
+            {% if filtres.q or filtres.produit or filtres.type or filtres.utilisateur or filtres.date_debut or filtres.date_fin %}
                 <div class="sf-vide-titre">Aucun mouvement ne correspond à ces filtres</div>
-                <p>Essayez une autre période ou un autre produit.</p>
+                <p>Essayez une autre période, un autre produit ou un autre utilisateur.</p>
                 <a href="{% url 'inventory:mouvement_liste' %}" class="btn btn-sm sf-btn-secondaire">Effacer les filtres</a>
             {% else %}
                 <div class="sf-vide-titre">Aucun mouvement enregistré</div>

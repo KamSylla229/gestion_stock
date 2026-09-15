@@ -128,36 +128,56 @@ def _envoyer_email(sujet: str, corps_texte: str, corps_html: str, destinataires:
 
 
 @transaction.atomic
-def enregistrer_mouvement(produit: Produit, type_mouvement: str, quantite: int, motif: str = "") -> Mouvement:
+def enregistrer_mouvement(
+    produit: Produit,
+    type_mouvement: str,
+    quantite: int,
+    motif: str = "",
+    utilisateur=None,
+    document: str = "",
+    destination: str = "",
+) -> Mouvement:
     """
     Seule fonction autorisée à modifier Produit.quantite_stock.
 
     Crée un Mouvement et met à jour le stock du produit dans la même
     transaction : soit les deux opérations réussissent, soit aucune.
 
-    Lève ValidationError (exception métier) si la quantité est invalide,
-    si le stock est insuffisant ou si le type de mouvement est inconnu.
+    Trois types de mouvement :
+      ENTREE     : augmente le stock (réception, régularisation à la hausse)
+      SORTIE     : diminue le stock (vente)
+      AJUSTEMENT : diminue le stock hors vente (casse, perte, écart
+                   d'inventaire). Le motif y est obligatoire.
 
-    Si une sortie fait franchir le seuil d'alerte du produit, une alerte email
-    est programmée APRÈS validation de la transaction (transaction.on_commit) :
-    aucune alerte n'est envoyée pour un mouvement finalement annulé.
+    Lève ValidationError (exception métier) si la quantité est invalide,
+    si le stock est insuffisant, si le motif manque sur un ajustement ou
+    si le type de mouvement est inconnu.
+
+    Si le mouvement fait franchir le seuil d'alerte du produit, une alerte
+    email est programmée APRÈS validation de la transaction
+    (transaction.on_commit) : aucune alerte pour un mouvement annulé.
     """
     if quantite is None or quantite <= 0:
         raise ValidationError("La quantité doit être strictement positive.")
+
+    if type_mouvement not in dict(Mouvement.TYPE_CHOICES):
+        raise ValidationError(f"Type de mouvement inconnu : {type_mouvement}")
+
+    if type_mouvement == Mouvement.AJUSTEMENT and not motif.strip():
+        raise ValidationError("Un ajustement doit être justifié par un motif.")
 
     stock_avant = produit.quantite_stock
 
     if type_mouvement == Mouvement.ENTREE:
         produit.quantite_stock += quantite
-    elif type_mouvement == Mouvement.SORTIE:
+    else:
+        # SORTIE et AJUSTEMENT diminuent tous deux le stock.
         if quantite > produit.quantite_stock:
             raise ValidationError(
                 f"Stock insuffisant pour {produit.nom} : "
                 f"{produit.quantite_stock} en stock, {quantite} demandés."
             )
         produit.quantite_stock -= quantite
-    else:
-        raise ValidationError(f"Type de mouvement inconnu : {type_mouvement}")
 
     produit.save(update_fields=["quantite_stock"])
 
@@ -166,9 +186,13 @@ def enregistrer_mouvement(produit: Produit, type_mouvement: str, quantite: int, 
         type_mouvement=type_mouvement,
         quantite=quantite,
         motif=motif,
+        utilisateur=utilisateur,
+        stock_apres=produit.quantite_stock,
+        document=document,
+        destination=destination,
     )
 
-    if type_mouvement == Mouvement.SORTIE and franchit_seuil_alerte(
+    if type_mouvement in Mouvement.TYPES_SORTANTS and franchit_seuil_alerte(
         stock_avant, produit.quantite_stock, produit.seuil_alerte
     ):
         transaction.on_commit(

@@ -1,0 +1,4 @@
+{% comment %}
+Badge de type de mouvement, partagé par tous les tableaux.
+Entrée = vert, Sortie = rouge, Ajustement = ambre.
+{% endcomment %}{% if mouvement.type_mouvement == "ENTREE" %}<span class="sf-badge sf-badge-vert">Entrée</span>{% elif mouvement.type_mouvement == "SORTIE" %}<span class="sf-badge sf-badge-rouge">Sortie</span>{% else %}<span class="sf-badge sf-badge-ambre">Ajustement</span>{% endif %}

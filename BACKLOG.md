@@ -32,29 +32,33 @@ Réalisables immédiatement avec les données actuelles.
 | A9 | KPI fiche produit : sorties sur 30 jours, moyenne par jour, couverture en jours, dernière entrée | Fiche produit |
 | A10 | Marge affichée en pourcentage en plus du montant | Fiche produit |
 | A11 | Coordonnées du fournisseur complètes sur la fiche produit (déjà en base, partiellement affichées) | Fiche produit |
-| A12 | Recherche par produit dans l'historique (champ texte, pas seulement la liste déroulante) | Historique |
+| ~~A12~~ | ~~Recherche libre dans l'historique~~ — livré avec le bloc B | Historique |
 | A13 | Export Excel de l'**historique des mouvements** (l'export actuel ne porte que sur l'état du stock) | Historique |
 | A14 | Bouton « Sortir tout le stock disponible » | Sortie |
 | A15 | Compteurs « Sorties aujourd'hui » et « Valeur de la sortie » dans le panneau latéral | Sortie |
 | A16 | Encadré conseil « Le seuil a été franchi N fois en 30 jours » | Fiche produit |
 
-## B. Nécessite des champs sur `Mouvement`
+## B. Champs sur `Mouvement` — FAIT
 
-Une seule migration débloque tout ce bloc. **À faire en premier demain.**
+Migration `0004` : `utilisateur`, `stock_apres`, `document`, `destination`,
+et le type `AJUSTEMENT`. Les sept éléments ci-dessous sont livrés.
 
-Champs à ajouter : `utilisateur` (FK User), `stock_apres` (entier),
-`document` (référence de bon, texte), `destination` (client ou chantier, texte),
-et la valeur `AJUSTEMENT` dans `TYPE_CHOICES`.
+Décision métier retenue : un **ajustement diminue** le stock (casse, vol,
+écart d'inventaire) et exige un motif. Une correction à la hausse se fait
+par une entrée avec le motif « Régularisation ».
+
+Les mouvements enregistrés avant cette migration ont `utilisateur` et
+`stock_apres` à vide : l'interface affiche « — ».
 
 | # | Élément | Écran |
 |---|---|---|
-| B1 | Colonne « Par » / utilisateur dans l'historique, la fiche produit et le tableau de bord | 3 écrans |
-| B2 | Filtre par utilisateur dans l'historique | Historique |
-| B3 | Colonne « Stock après » figée au moment du mouvement | Historique, fiche produit |
-| B4 | Colonne « Document » (BON-0412, BL-2214) + recherche par référence de bon | Historique |
-| B5 | Champs « Client ou destination » et « Référence du bon » au formulaire de sortie | Sortie |
-| B6 | Type de mouvement « Ajustement » (casse, écart d'inventaire) | Sortie, historique |
-| B7 | Colonne « Valeur » du mouvement | Historique |
+| ~~B1~~ | Colonne « Par » / utilisateur dans l'historique, la fiche produit et le tableau de bord | 3 écrans |
+| ~~B2~~ | Filtre par utilisateur dans l'historique | Historique |
+| ~~B3~~ | Colonne « Stock après » figée au moment du mouvement | Historique, fiche produit |
+| ~~B4~~ | Colonne « Document » (BON-0412, BL-2214) + recherche par référence de bon | Historique |
+| ~~B5~~ | Champs « Client ou destination » et « Référence du bon » au formulaire de sortie | Sortie |
+| ~~B6~~ | Type de mouvement « Ajustement » (casse, écart d'inventaire) | Sortie, historique |
+| ~~B7~~ | Colonne « Valeur » du mouvement | Historique |
 
 ## C. Nécessite des champs sur `Produit` / `Fournisseur`
 
@@ -124,19 +128,6 @@ Explicitement exclus par la dernière page des maquettes.
 ---
 
 ## Priorité haute
-
-### Traçabilité utilisateur sur les mouvements
-Le modèle `Mouvement` ne mémorise pas **qui** a enregistré l'entrée ou la sortie.
-Aujourd'hui, l'historique dit ce qui s'est passé, pas qui l'a fait.
-
-C'est la limite la plus gênante pour un produit vendu à une PME avec deux rôles :
-en cas d'écart d'inventaire, on ne peut pas remonter à l'opérateur.
-
-À faire : ajouter `utilisateur = ForeignKey(User, on_delete=PROTECT, null=True)`
-sur `Mouvement`, le renseigner dans `services.enregistrer_mouvement()` (paramètre
-explicite, pas de variable globale), puis l'afficher dans l'historique, sur la
-fiche produit et le tableau de bord, et l'ajouter comme filtre de l'historique.
-Prévoir `null=True` pour les mouvements déjà enregistrés.
 
 ### Déploiement
 Volontairement exclu de cette itération.

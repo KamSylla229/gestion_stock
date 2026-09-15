@@ -142,6 +142,7 @@
                         <th>Type</th>
                         <th class="text-end sf-num">Quantité</th>
                         <th>Motif</th>
+                        <th>Par</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -149,15 +150,10 @@
                         <tr>
                             <td class="sf-num text-nowrap">{{ mouvement.date_mouvement|date:"d/m · H:i" }}</td>
                             <td><a href="{{ mouvement.produit.get_absolute_url }}">{{ mouvement.produit.nom }}</a></td>
-                            <td>
-                                {% if mouvement.type_mouvement == "ENTREE" %}
-                                    <span class="sf-badge sf-badge-vert">Entrée</span>
-                                {% else %}
-                                    <span class="sf-badge sf-badge-rouge">Sortie</span>
-                                {% endif %}
-                            </td>
+                            <td>{% include "inventory/_badge_mouvement.html" %}</td>
                             <td class="text-end sf-num fw-semibold">{{ mouvement.quantite }}</td>
                             <td class="text-secondary">{{ mouvement.motif|default:"—" }}</td>
+                            <td class="text-secondary">{{ mouvement.utilisateur.username|default:"—" }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>

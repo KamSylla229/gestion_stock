@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.urls import reverse
 
@@ -98,10 +99,15 @@ class Mouvement(models.Model):
 
     ENTREE = "ENTREE"
     SORTIE = "SORTIE"
+    AJUSTEMENT = "AJUSTEMENT"
     TYPE_CHOICES = [
         (ENTREE, "Entrée"),
         (SORTIE, "Sortie"),
+        (AJUSTEMENT, "Ajustement"),
     ]
+
+    # Types qui diminuent le stock.
+    TYPES_SORTANTS = (SORTIE, AJUSTEMENT)
 
     produit = models.ForeignKey(
         Produit, on_delete=models.PROTECT, related_name="mouvements"
@@ -109,6 +115,28 @@ class Mouvement(models.Model):
     type_mouvement = models.CharField(max_length=10, choices=TYPE_CHOICES)
     quantite = models.PositiveIntegerField()
     motif = models.CharField(max_length=255, blank=True)
+
+    # Qui a enregistré le mouvement. PROTECT : on ne supprime pas un utilisateur
+    # qui a de l'historique. null=True pour les mouvements antérieurs à ce champ.
+    utilisateur = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="mouvements",
+        null=True,
+        blank=True,
+    )
+
+    # Stock du produit juste après ce mouvement, figé au moment de l'écriture.
+    # Permet de relire l'historique sans avoir à le rejouer. null pour les
+    # mouvements enregistrés avant l'ajout du champ.
+    stock_apres = models.PositiveIntegerField(null=True, blank=True)
+
+    # Pièce justificative : bon de sortie, bordereau de livraison...
+    document = models.CharField(max_length=50, blank=True)
+
+    # Client, chantier ou provenance selon le type de mouvement.
+    destination = models.CharField(max_length=255, blank=True)
+
     date_mouvement = models.DateTimeField(auto_now_add=True)
 
     class Meta:

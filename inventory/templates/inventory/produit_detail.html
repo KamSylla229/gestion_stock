@@ -30,6 +30,7 @@
         {% if perms.inventory.add_mouvement %}
             <a href="{% url 'inventory:entree_stock' %}?produit={{ produit.pk }}" class="btn sf-btn-vert">Entrée</a>
             <a href="{% url 'inventory:sortie_stock' %}?produit={{ produit.pk }}" class="btn sf-btn-danger">Sortie</a>
+            <a href="{% url 'inventory:ajustement_stock' %}?produit={{ produit.pk }}" class="btn sf-btn-secondaire">Ajustement</a>
         {% endif %}
     </div>
 </div>
@@ -140,22 +141,25 @@
                         <th>Date</th>
                         <th>Type</th>
                         <th class="text-end sf-num">Quantité</th>
+                        <th class="text-end sf-num">Stock après</th>
                         <th>Motif</th>
+                        <th>Document</th>
+                        <th>Par</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for mouvement in mouvements %}
                         <tr>
                             <td class="sf-num text-nowrap">{{ mouvement.date_mouvement|date:"d/m/Y · H:i" }}</td>
-                            <td>
-                                {% if mouvement.type_mouvement == "ENTREE" %}
-                                    <span class="sf-badge sf-badge-vert">Entrée</span>
-                                {% else %}
-                                    <span class="sf-badge sf-badge-rouge">Sortie</span>
-                                {% endif %}
-                            </td>
+                            <td>{% include "inventory/_badge_mouvement.html" %}</td>
                             <td class="text-end sf-num fw-semibold">{{ mouvement.quantite }}</td>
-                            <td class="text-secondary">{{ mouvement.motif|default:"—" }}</td>
+                            <td class="text-end sf-num text-secondary">{{ mouvement.stock_apres|default_if_none:"—" }}</td>
+                            <td class="text-secondary">
+                                {{ mouvement.motif|default:"—" }}
+                                {% if mouvement.destination %}<div class="sf-ref">{{ mouvement.destination }}</div>{% endif %}
+                            </td>
+                            <td class="sf-ref">{{ mouvement.document|default:"—" }}</td>
+                            <td class="text-secondary">{{ mouvement.utilisateur.username|default:"—" }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>

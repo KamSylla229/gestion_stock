@@ -14,6 +14,7 @@ MOUVEMENTS DE LA JOURNEE
 Total des mouvements : {{ stats_jour.mouvements_nombre }}
 Entrees              : {{ stats_jour.entrees_nombre }} ({{ stats_jour.entrees_quantite }} unites)
 Sorties              : {{ stats_jour.sorties_nombre }} ({{ stats_jour.sorties_quantite }} unites)
+Ajustements          : {{ stats_jour.ajustements_nombre }} ({{ stats_jour.ajustements_quantite }} unites)
 
 PRODUITS A REAPPROVISIONNER
 ---------------------------

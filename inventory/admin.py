@@ -49,10 +49,16 @@ class MouvementAdmin(admin.ModelAdmin):
     l'application (menu « Entrée de stock » / « Sortie de stock »).
     """
 
-    list_display = ("produit", "type_mouvement", "quantite", "date_mouvement")
-    list_filter = ("type_mouvement", "date_mouvement")
-    search_fields = ("produit__nom", "produit__reference")
-    readonly_fields = ("produit", "type_mouvement", "quantite", "motif", "date_mouvement")
+    list_display = (
+        "date_mouvement", "produit", "type_mouvement", "quantite",
+        "stock_apres", "document", "utilisateur",
+    )
+    list_filter = ("type_mouvement", "date_mouvement", "utilisateur")
+    search_fields = ("produit__nom", "produit__reference", "document", "destination")
+    readonly_fields = (
+        "produit", "type_mouvement", "quantite", "motif", "utilisateur",
+        "stock_apres", "document", "destination", "date_mouvement",
+    )
 
     def has_add_permission(self, request):
         return False

@@ -46,6 +46,7 @@ class Command(BaseCommand):
         self.stdout.write(
             f"  Entrées / sorties      : {stats_jour['entrees_nombre']} / {stats_jour['sorties_nombre']}"
         )
+        self.stdout.write(f"  Ajustements du jour    : {stats_jour['ajustements_nombre']}")
 
         if options["apercu"]:
             self.stdout.write(self.style.WARNING("Mode aperçu : aucun email envoyé."))

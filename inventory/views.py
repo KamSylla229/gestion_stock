@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.contrib.auth.models import User
 from django.contrib.messages.views import SuccessMessageMixin
 from django.core.exceptions import ValidationError
 from django.db.models import F, Q
@@ -125,7 +126,7 @@ class ProduitDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
         # Mouvement.Meta.ordering = ["-date_mouvement", "-id"] : les plus récents d'abord.
-        mouvements = list(self.object.mouvements.all()[:20])
+        mouvements = list(self.object.mouvements.select_related("utilisateur")[:20])
         contexte["mouvements"] = mouvements
         contexte["dernier_mouvement"] = mouvements[0] if mouvements else None
         contexte["valeur_immobilisee"] = self.object.quantite_stock * self.object.prix_achat
@@ -173,6 +174,12 @@ class MouvementCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView)
             initial["produit"] = produit
         return initial
 
+    def get_form_kwargs(self):
+        # Le formulaire adapte ses libellés et ses champs au type de mouvement.
+        kwargs = super().get_form_kwargs()
+        kwargs["type_mouvement"] = self.type_mouvement
+        return kwargs
+
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
         contexte["titre"] = self.titre
@@ -201,6 +208,10 @@ class MouvementCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView)
                 type_mouvement=self.type_mouvement,
                 quantite=form.cleaned_data["quantite"],
                 motif=form.cleaned_data["motif"],
+                # Traçabilité : on enregistre qui effectue l'opération.
+                utilisateur=self.request.user,
+                document=form.cleaned_data.get("document", ""),
+                destination=form.cleaned_data.get("destination", ""),
             )
         except ValidationError as erreur:
             # Erreur métier (stock insuffisant, quantité invalide) : on
@@ -227,6 +238,14 @@ class SortieStockView(MouvementCreateView):
     section = "sortie"
 
 
+class AjustementStockView(MouvementCreateView):
+    """Constat de perte : casse, vol ou écart d'inventaire."""
+
+    type_mouvement = Mouvement.AJUSTEMENT
+    titre = "Ajustement de stock"
+    section = "ajustement"
+
+
 class MouvementListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """Historique des mouvements, filtrable par produit, type et période."""
 
@@ -237,14 +256,30 @@ class MouvementListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     extra_context = {"section": "historique"}
 
     def get_queryset(self):
-        queryset = Mouvement.objects.select_related("produit")
+        queryset = Mouvement.objects.select_related("produit", "utilisateur").annotate(
+            # Valeur du mouvement au prix d'achat, calculée par la base.
+            valeur=F("quantite") * F("produit__prix_achat"),
+        )
+
+        # Recherche libre : nom ou référence du produit, ou référence du bon.
+        recherche = self.request.GET.get("q", "").strip()
+        if recherche:
+            queryset = queryset.filter(
+                Q(produit__nom__icontains=recherche)
+                | Q(produit__reference__icontains=recherche)
+                | Q(document__icontains=recherche)
+            )
 
         produit = self.request.GET.get("produit", "")
         if produit.isdigit():
             queryset = queryset.filter(produit_id=produit)
 
+        utilisateur = self.request.GET.get("utilisateur", "")
+        if utilisateur.isdigit():
+            queryset = queryset.filter(utilisateur_id=utilisateur)
+
         type_mouvement = self.request.GET.get("type", "")
-        if type_mouvement in (Mouvement.ENTREE, Mouvement.SORTIE):
+        if type_mouvement in dict(Mouvement.TYPE_CHOICES):
             queryset = queryset.filter(type_mouvement=type_mouvement)
 
         # parse_date renvoie None si la chaîne n'est pas une date valide :
@@ -263,6 +298,10 @@ class MouvementListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         contexte = super().get_context_data(**kwargs)
         contexte["produits"] = Produit.objects.order_by("nom")
         contexte["types_mouvement"] = Mouvement.TYPE_CHOICES
+        # Seuls les utilisateurs ayant réellement enregistré un mouvement.
+        contexte["utilisateurs"] = (
+            User.objects.filter(mouvements__isnull=False).distinct().order_by("username")
+        )
         contexte["filtres"] = self.request.GET
         contexte["querystring"] = querystring_sans_page(self.request)
         return contexte

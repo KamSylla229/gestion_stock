@@ -1,6 +1,6 @@
 from django import forms
 
-from inventory.models import Produit
+from inventory.models import Mouvement, Produit
 
 
 def appliquer_classes_bootstrap(champs):
@@ -42,11 +42,13 @@ class ProduitForm(forms.ModelForm):
 
 class MouvementForm(forms.Form):
     """
-    Formulaire d'entrée / sortie de stock.
+    Formulaire d'entrée, de sortie ou d'ajustement de stock.
 
     Ce n'est volontairement PAS un ModelForm : la création du Mouvement et
     la mise à jour du stock doivent passer par services.enregistrer_mouvement(),
     jamais par un form.save() qui contournerait la logique métier.
+
+    Les libellés s'adaptent au type de mouvement passé par la vue.
     """
 
     produit = forms.ModelChoiceField(
@@ -56,7 +58,27 @@ class MouvementForm(forms.Form):
     )
     quantite = forms.IntegerField(min_value=1, label="Quantité")
     motif = forms.CharField(max_length=255, required=False, label="Motif")
+    document = forms.CharField(
+        max_length=50, required=False, label="Référence du bon",
+        widget=forms.TextInput(attrs={"placeholder": "Facultatif"}),
+    )
+    destination = forms.CharField(
+        max_length=255, required=False, label="Client ou destination",
+        widget=forms.TextInput(attrs={"placeholder": "Facultatif"}),
+    )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, type_mouvement=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.type_mouvement = type_mouvement
+
+        if type_mouvement == Mouvement.ENTREE:
+            self.fields["destination"].label = "Provenance"
+            self.fields["document"].label = "Référence du bordereau"
+        elif type_mouvement == Mouvement.AJUSTEMENT:
+            # Un ajustement constate une perte : ni client, ni bon de sortie.
+            del self.fields["destination"]
+            self.fields["motif"].required = True
+            self.fields["motif"].label = "Motif de l'ajustement"
+            self.fields["motif"].widget.attrs["placeholder"] = "Casse, vol, écart d'inventaire…"
+
         appliquer_classes_bootstrap(self.fields)

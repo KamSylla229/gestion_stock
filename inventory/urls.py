@@ -36,4 +36,5 @@ urlpatterns = [
     path("mouvements/", views.MouvementListView.as_view(), name="mouvement_liste"),
     path("mouvements/entree/", views.EntreeStockView.as_view(), name="entree_stock"),
     path("mouvements/sortie/", views.SortieStockView.as_view(), name="sortie_stock"),
+    path("mouvements/ajustement/", views.AjustementStockView.as_view(), name="ajustement_stock"),
 ]

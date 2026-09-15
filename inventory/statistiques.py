@@ -92,7 +92,10 @@ def produits_en_alerte():
 
 def derniers_mouvements(limite: int = 10):
     """Les N mouvements les plus récents, produit préchargé."""
-    return Mouvement.objects.select_related("produit").order_by("-date_mouvement", "-id")[:limite]
+    return (
+        Mouvement.objects.select_related("produit", "utilisateur")
+        .order_by("-date_mouvement", "-id")[:limite]
+    )
 
 
 def statistiques_du_jour(jour=None) -> dict:
@@ -110,9 +113,11 @@ def statistiques_du_jour(jour=None) -> dict:
         .annotate(nombre=Count("id"), quantite_totale=Coalesce(Sum("quantite"), 0))
     )
 
+    # Un compteur par type existant : ajouter un type au modèle suffit,
+    # aucun risque d'oublier de l'additionner ici.
     resume = {
-        Mouvement.ENTREE: {"nombre": 0, "quantite_totale": 0},
-        Mouvement.SORTIE: {"nombre": 0, "quantite_totale": 0},
+        type_mouvement: {"nombre": 0, "quantite_totale": 0}
+        for type_mouvement, _ in Mouvement.TYPE_CHOICES
     }
     for ligne in par_type:
         resume[ligne["type_mouvement"]] = {
@@ -122,6 +127,7 @@ def statistiques_du_jour(jour=None) -> dict:
 
     entrees = resume[Mouvement.ENTREE]
     sorties = resume[Mouvement.SORTIE]
+    ajustements = resume[Mouvement.AJUSTEMENT]
 
     return {
         "jour": jour,
@@ -129,5 +135,7 @@ def statistiques_du_jour(jour=None) -> dict:
         "entrees_quantite": entrees["quantite_totale"],
         "sorties_nombre": sorties["nombre"],
         "sorties_quantite": sorties["quantite_totale"],
-        "mouvements_nombre": entrees["nombre"] + sorties["nombre"],
+        "ajustements_nombre": ajustements["nombre"],
+        "ajustements_quantite": ajustements["quantite_totale"],
+        "mouvements_nombre": sum(compteur["nombre"] for compteur in resume.values()),
     }

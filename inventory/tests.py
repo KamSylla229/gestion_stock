@@ -950,3 +950,310 @@ class ValeurParCategorieTests(BaseApplicationTestCase):
 
         reponse = self.client.get(reverse("inventory:tableau_bord"))
         self.assertContains(reponse, "Aucune valeur à afficher")
+
+
+class TracabiliteMouvementTests(BaseApplicationTestCase):
+    """Champs de traçabilité : utilisateur, stock après, document, destination."""
+
+    def setUp(self):
+        self.magasinier = creer_utilisateur("magasinier", groupe="Magasinier")
+        self.categorie = Categorie.objects.create(nom="Alimentation")
+        self.produit = Produit.objects.create(
+            reference="TRA-001", nom="Riz 25kg", categorie=self.categorie,
+            prix_achat=Decimal("1000.00"), prix_vente=Decimal("1400.00"),
+            quantite_stock=50, seuil_alerte=10,
+        )
+
+    def test_service_enregistre_l_utilisateur(self):
+        mouvement = services.enregistrer_mouvement(
+            self.produit, Mouvement.SORTIE, 5, motif="Vente",
+            utilisateur=self.magasinier,
+        )
+        self.assertEqual(mouvement.utilisateur, self.magasinier)
+
+    def test_utilisateur_facultatif(self):
+        """Les scripts (seed, import) peuvent enregistrer sans utilisateur."""
+        mouvement = services.enregistrer_mouvement(self.produit, Mouvement.ENTREE, 5)
+        self.assertIsNone(mouvement.utilisateur)
+
+    def test_stock_apres_est_fige(self):
+        """stock_apres garde la valeur du stock au moment du mouvement."""
+        premier = services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 20)
+        second = services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 10)
+
+        self.assertEqual(premier.stock_apres, 30)
+        self.assertEqual(second.stock_apres, 20)
+
+        # Le stock du produit continue d'évoluer, l'historique ne bouge plus.
+        services.enregistrer_mouvement(self.produit, Mouvement.ENTREE, 100)
+        premier.refresh_from_db()
+        self.assertEqual(premier.stock_apres, 30)
+
+    def test_document_et_destination_enregistres(self):
+        mouvement = services.enregistrer_mouvement(
+            self.produit, Mouvement.SORTIE, 5, motif="Vente",
+            document="BON-0412", destination="Chantier Godomey",
+        )
+        self.assertEqual(mouvement.document, "BON-0412")
+        self.assertEqual(mouvement.destination, "Chantier Godomey")
+
+    def test_vue_sortie_enregistre_l_utilisateur_connecte(self):
+        """La traçabilité vient de la session, pas d'un champ du formulaire."""
+        self.client.login(username="magasinier", password=MOT_DE_PASSE_TEST)
+
+        reponse = self.client.post(
+            reverse("inventory:sortie_stock"),
+            {
+                "produit": self.produit.pk, "quantite": "5", "motif": "Vente",
+                "document": "BON-0001", "destination": "Client Sossou",
+            },
+        )
+        self.assertEqual(reponse.status_code, 302)
+
+        mouvement = Mouvement.objects.get()
+        self.assertEqual(mouvement.utilisateur, self.magasinier)
+        self.assertEqual(mouvement.stock_apres, 45)
+        self.assertEqual(mouvement.document, "BON-0001")
+        self.assertEqual(mouvement.destination, "Client Sossou")
+
+    def test_colonnes_visibles_dans_l_historique(self):
+        self.client.login(username="magasinier", password=MOT_DE_PASSE_TEST)
+        services.enregistrer_mouvement(
+            self.produit, Mouvement.SORTIE, 5, motif="Vente",
+            utilisateur=self.magasinier, document="BON-0412",
+            destination="Chantier Godomey",
+        )
+
+        reponse = self.client.get(reverse("inventory:mouvement_liste"))
+
+        self.assertContains(reponse, "BON-0412")
+        self.assertContains(reponse, "Chantier Godomey")
+        self.assertContains(reponse, "magasinier")
+        self.assertContains(reponse, "Stock après")
+
+    def test_mouvement_ancien_sans_stock_apres_s_affiche(self):
+        """Les mouvements antérieurs au champ ne cassent pas l'affichage."""
+        self.client.login(username="magasinier", password=MOT_DE_PASSE_TEST)
+        mouvement = services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 5)
+        Mouvement.objects.filter(pk=mouvement.pk).update(stock_apres=None)
+
+        reponse = self.client.get(reverse("inventory:mouvement_liste"))
+        self.assertEqual(reponse.status_code, 200)
+
+
+class AjustementStockTests(BaseApplicationTestCase):
+    """Ajustement : constat de perte, casse ou écart d'inventaire."""
+
+    def setUp(self):
+        self.magasinier = creer_utilisateur("magasinier", groupe="Magasinier")
+        self.client.login(username="magasinier", password=MOT_DE_PASSE_TEST)
+        self.categorie = Categorie.objects.create(nom="Alimentation")
+        self.produit = Produit.objects.create(
+            reference="AJU-001", nom="Bouteille", categorie=self.categorie,
+            prix_achat=Decimal("500.00"), prix_vente=Decimal("800.00"),
+            quantite_stock=50, seuil_alerte=10,
+        )
+
+    def test_ajustement_diminue_le_stock(self):
+        mouvement = services.enregistrer_mouvement(
+            self.produit, Mouvement.AJUSTEMENT, 3, motif="Casse",
+        )
+
+        self.produit.refresh_from_db()
+        self.assertEqual(self.produit.quantite_stock, 47)
+        self.assertEqual(mouvement.type_mouvement, Mouvement.AJUSTEMENT)
+        self.assertEqual(mouvement.stock_apres, 47)
+
+    def test_motif_obligatoire(self):
+        """Un ajustement sans justification est refusé."""
+        with self.assertRaises(ValidationError):
+            services.enregistrer_mouvement(self.produit, Mouvement.AJUSTEMENT, 3)
+        with self.assertRaises(ValidationError):
+            services.enregistrer_mouvement(self.produit, Mouvement.AJUSTEMENT, 3, motif="   ")
+
+        self.produit.refresh_from_db()
+        self.assertEqual(self.produit.quantite_stock, 50)
+        self.assertEqual(Mouvement.objects.count(), 0)
+
+    def test_ajustement_superieur_au_stock_refuse(self):
+        with self.assertRaises(ValidationError):
+            services.enregistrer_mouvement(
+                self.produit, Mouvement.AJUSTEMENT, 999, motif="Casse",
+            )
+
+        self.produit.refresh_from_db()
+        self.assertEqual(self.produit.quantite_stock, 50)
+
+    @override_settings(**PARAMETRES_EMAIL_TEST)
+    def test_ajustement_qui_franchit_le_seuil_alerte(self):
+        """Une casse qui fait passer sous le seuil prévient le gérant."""
+        with self.captureOnCommitCallbacks(execute=True):
+            services.enregistrer_mouvement(
+                self.produit, Mouvement.AJUSTEMENT, 45, motif="Casse",
+            )
+
+        self.produit.refresh_from_db()
+        self.assertEqual(self.produit.quantite_stock, 5)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Bouteille", mail.outbox[0].subject)
+
+    def test_formulaire_ajustement_exige_un_motif(self):
+        reponse = self.client.post(
+            reverse("inventory:ajustement_stock"),
+            {"produit": self.produit.pk, "quantite": "3", "motif": ""},
+        )
+
+        self.assertEqual(reponse.status_code, 200)  # formulaire réaffiché
+        self.produit.refresh_from_db()
+        self.assertEqual(self.produit.quantite_stock, 50)
+        self.assertEqual(Mouvement.objects.count(), 0)
+
+    def test_formulaire_ajustement_sans_champ_destination(self):
+        """Un ajustement n'a ni client ni destination."""
+        reponse = self.client.get(reverse("inventory:ajustement_stock"))
+        self.assertNotIn("destination", reponse.context["form"].fields)
+
+    def test_vue_ajustement_complete(self):
+        reponse = self.client.post(
+            reverse("inventory:ajustement_stock"),
+            {"produit": self.produit.pk, "quantite": "3", "motif": "Casse au dépôt"},
+        )
+
+        self.assertEqual(reponse.status_code, 302)
+        mouvement = Mouvement.objects.get()
+        self.assertEqual(mouvement.type_mouvement, Mouvement.AJUSTEMENT)
+        self.assertEqual(mouvement.motif, "Casse au dépôt")
+        self.assertEqual(mouvement.utilisateur, self.magasinier)
+
+    def test_badge_ajustement_dans_l_historique(self):
+        services.enregistrer_mouvement(
+            self.produit, Mouvement.AJUSTEMENT, 3, motif="Casse",
+        )
+        reponse = self.client.get(reverse("inventory:mouvement_liste"))
+        self.assertContains(reponse, "Ajustement")
+
+
+class FiltresHistoriqueTests(BaseApplicationTestCase):
+    """Recherche libre, filtre utilisateur et filtre par type dans l'historique."""
+
+    def setUp(self):
+        self.gerant = creer_utilisateur("gerant", groupe="Gerant")
+        self.magasinier = creer_utilisateur("magasinier", groupe="Magasinier")
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+
+        self.categorie = Categorie.objects.create(nom="Alimentation")
+        self.riz = Produit.objects.create(
+            reference="FIL-RIZ", nom="Riz 25kg", categorie=self.categorie,
+            prix_achat=Decimal("1000.00"), prix_vente=Decimal("1400.00"), quantite_stock=100,
+        )
+        self.huile = Produit.objects.create(
+            reference="FIL-HUI", nom="Huile 5L", categorie=self.categorie,
+            prix_achat=Decimal("500.00"), prix_vente=Decimal("700.00"), quantite_stock=100,
+        )
+
+        services.enregistrer_mouvement(
+            self.riz, Mouvement.SORTIE, 5, motif="Vente",
+            utilisateur=self.gerant, document="BON-1000",
+        )
+        services.enregistrer_mouvement(
+            self.huile, Mouvement.ENTREE, 10, motif="Livraison",
+            utilisateur=self.magasinier, document="BL-2000",
+        )
+        services.enregistrer_mouvement(
+            self.huile, Mouvement.AJUSTEMENT, 2, motif="Casse",
+            utilisateur=self.magasinier,
+        )
+
+    def _mouvements(self, parametres):
+        reponse = self.client.get(reverse("inventory:mouvement_liste"), parametres)
+        self.assertEqual(reponse.status_code, 200)
+        return list(reponse.context["mouvements"])
+
+    def test_filtre_par_utilisateur(self):
+        resultats = self._mouvements({"utilisateur": self.magasinier.pk})
+
+        self.assertEqual(len(resultats), 2)
+        self.assertTrue(all(m.utilisateur == self.magasinier for m in resultats))
+
+    def test_recherche_par_reference_de_bon(self):
+        resultats = self._mouvements({"q": "BON-1000"})
+
+        self.assertEqual(len(resultats), 1)
+        self.assertEqual(resultats[0].document, "BON-1000")
+
+    def test_recherche_par_nom_de_produit(self):
+        resultats = self._mouvements({"q": "Huile"})
+        self.assertEqual(len(resultats), 2)
+
+    def test_recherche_par_reference_produit(self):
+        resultats = self._mouvements({"q": "FIL-RIZ"})
+        self.assertEqual(len(resultats), 1)
+
+    def test_filtre_par_type_ajustement(self):
+        resultats = self._mouvements({"type": Mouvement.AJUSTEMENT})
+
+        self.assertEqual(len(resultats), 1)
+        self.assertEqual(resultats[0].motif, "Casse")
+
+    def test_filtres_combines(self):
+        resultats = self._mouvements({
+            "utilisateur": self.magasinier.pk,
+            "type": Mouvement.ENTREE,
+        })
+
+        self.assertEqual(len(resultats), 1)
+        self.assertEqual(resultats[0].document, "BL-2000")
+
+    def test_valeur_du_mouvement_annotee(self):
+        """La valeur est calculée par la base : quantité x prix d'achat."""
+        resultats = self._mouvements({"q": "BON-1000"})
+        self.assertEqual(resultats[0].valeur, Decimal("5000.00"))  # 5 x 1000
+
+    def test_filtre_utilisateur_invalide_ignore(self):
+        resultats = self._mouvements({"utilisateur": "abc"})
+        self.assertEqual(len(resultats), 3)
+
+    def test_liste_des_utilisateurs_limitee_aux_actifs(self):
+        """Seuls les utilisateurs ayant enregistré un mouvement sont proposés."""
+        creer_utilisateur("jamais_actif", groupe="Magasinier")
+
+        reponse = self.client.get(reverse("inventory:mouvement_liste"))
+        noms = [u.username for u in reponse.context["utilisateurs"]]
+
+        self.assertIn("gerant", noms)
+        self.assertIn("magasinier", noms)
+        self.assertNotIn("jamais_actif", noms)
+
+
+@override_settings(**PARAMETRES_EMAIL_TEST)
+class RapportAvecAjustementsTests(BaseApplicationTestCase):
+    """Le rapport quotidien compte aussi les ajustements."""
+
+    def setUp(self):
+        self.categorie = Categorie.objects.create(nom="Alimentation")
+        self.produit = Produit.objects.create(
+            reference="RAJ-001", nom="Riz", categorie=self.categorie,
+            prix_achat=Decimal("1000.00"), prix_vente=Decimal("1400.00"), quantite_stock=100,
+        )
+
+    def test_statistiques_du_jour_incluent_les_ajustements(self):
+        services.enregistrer_mouvement(self.produit, Mouvement.ENTREE, 10)
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 4)
+        services.enregistrer_mouvement(self.produit, Mouvement.AJUSTEMENT, 2, motif="Casse")
+
+        stats = statistiques.statistiques_du_jour()
+
+        self.assertEqual(stats["ajustements_nombre"], 1)
+        self.assertEqual(stats["ajustements_quantite"], 2)
+        # Le total additionne bien les trois types.
+        self.assertEqual(stats["mouvements_nombre"], 3)
+
+    def test_rapport_email_mentionne_les_ajustements(self):
+        services.enregistrer_mouvement(self.produit, Mouvement.AJUSTEMENT, 2, motif="Casse")
+        mail.outbox = []
+
+        call_command("rapport_quotidien", verbosity=0)
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Ajustements", mail.outbox[0].alternatives[0][0])
+        self.assertIn("Ajustements", mail.outbox[0].body)

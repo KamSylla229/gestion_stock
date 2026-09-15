@@ -39,9 +39,12 @@ Conséquences concrètes :
 - Désactivation plutôt que suppression : aucune donnée n'est perdue
 
 **Mouvements de stock**
-- Entrées (réceptions) et sorties (ventes)
+- Entrées (réceptions), sorties (ventes) et ajustements (casses, écarts)
 - Contrôle du stock disponible avant toute sortie
-- Historique complet, paginé et filtrable par produit, type et période
+- Traçabilité complète : qui a fait quoi, quand, avec quelle pièce justificative
+- Stock après chaque mouvement figé dans l'historique
+- Historique paginé, filtrable par produit, type, utilisateur et période
+- Recherche libre par nom de produit, référence ou référence de bon
 - Les 20 derniers mouvements sur chaque fiche produit
 
 **Pilotage**
@@ -199,7 +202,7 @@ masquer un lien ne suffit pas, l'accès direct à l'URL est refusé par un 403.
 python manage.py test
 ```
 
-58 tests couvrent la logique métier (entrées, sorties, stock insuffisant,
+84 tests couvrent la logique métier (entrées, sorties, stock insuffisant,
 quantité nulle, transaction atomique), les alertes email, les KPI du tableau de
 bord, l'export Excel, les permissions par rôle et le parcours utilisateur complet.
 
