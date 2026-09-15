@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load humanize %}
 
 {% block titre %}Historique — StockFlow{% endblock %}
 
@@ -7,9 +8,16 @@
     <div>
         <h1 class="sf-titre">Historique des mouvements</h1>
         <p class="sf-sous-titre">
-            {{ page_obj.paginator.count }} mouvement{{ page_obj.paginator.count|pluralize }} enregistré{{ page_obj.paginator.count|pluralize }} · aucune suppression possible
+            {{ page_obj.paginator.count|intcomma }} mouvement{{ page_obj.paginator.count|pluralize }} enregistré{{ page_obj.paginator.count|pluralize }} · aucune suppression possible
         </p>
     </div>
+    {% if perms.inventory.exporter_stock %}
+        <a href="{% url 'inventory:export_mouvements_excel' %}{% if querystring %}?{{ querystring }}{% endif %}"
+           class="btn sf-btn-principal">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+            Exporter en Excel
+        </a>
+    {% endif %}
 </div>
 
 <div class="sf-carte mb-3">
@@ -94,7 +102,7 @@
                                 {% endif %}
                             </td>
                             <td class="sf-ref">{{ mouvement.document|default:"—" }}</td>
-                            <td class="text-end sf-num text-secondary">{{ mouvement.valeur|floatformat:0 }}</td>
+                            <td class="text-end sf-num text-secondary">{{ mouvement.valeur|floatformat:0|intcomma }}</td>
                             <td class="text-secondary">{{ mouvement.utilisateur.username|default:"—" }}</td>
                         </tr>
                     {% endfor %}
@@ -103,20 +111,7 @@
         </div>
 
         {% if is_paginated %}
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 py-2 border-top">
-                <span class="sf-kpi-note m-0">
-                    {{ mouvements|length }} mouvement{{ mouvements|length|pluralize }} sur {{ page_obj.paginator.count }}
-                </span>
-                <ul class="pagination pagination-sm mb-0">
-                    {% if page_obj.has_previous %}
-                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&{{ querystring }}">Précédent</a></li>
-                    {% endif %}
-                    <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
-                    {% if page_obj.has_next %}
-                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&{{ querystring }}">Suivant</a></li>
-                    {% endif %}
-                </ul>
-            </div>
+            {% include "inventory/_pagination.html" with resume=resume_pagination %}
         {% endif %}
     {% else %}
         <div class="sf-vide">

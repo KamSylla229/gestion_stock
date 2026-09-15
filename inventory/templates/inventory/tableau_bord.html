@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load humanize %}
 
 {% block titre %}Tableau de bord — StockFlow{% endblock %}
 
@@ -10,33 +11,41 @@
             {% now "l j F Y" %} · {{ kpis.produits_actifs }} référence{{ kpis.produits_actifs|pluralize }} active{{ kpis.produits_actifs|pluralize }}
         </p>
     </div>
-    {% if perms.inventory.exporter_stock %}
-        <a href="{% url 'inventory:export_stock_excel' %}" class="btn sf-btn-principal">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
-            Exporter
-        </a>
-    {% endif %}
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        <div class="sf-onglets">
+            {% for code, libelle, jours in periodes %}
+                <a class="sf-onglet{% if periode_active == code %} actif{% endif %}"
+                   href="?periode={{ code }}">{{ libelle }}</a>
+            {% endfor %}
+        </div>
+        {% if perms.inventory.exporter_stock %}
+            <a href="{% url 'inventory:export_stock_excel' %}" class="btn sf-btn-principal">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+                Exporter
+            </a>
+        {% endif %}
+    </div>
 </div>
 
-{# ---------- Les 4 indicateurs ---------- #}
+{# ---------- Les indicateurs ---------- #}
 <div class="row g-3 mb-3">
-    <div class="col-12 col-sm-6 col-xl-3">
+    <div class="col-12 col-sm-6 col-xl">
         <div class="sf-kpi">
             <div class="sf-kpi-label">Références actives</div>
-            <div class="sf-kpi-valeur">{{ kpis.produits_actifs }}</div>
-            <div class="sf-kpi-note">{{ kpis.quantite_totale }} unités en stock</div>
+            <div class="sf-kpi-valeur">{{ kpis.produits_actifs|intcomma }}</div>
+            <div class="sf-kpi-note">{{ kpis.quantite_totale|intcomma }} unités en stock</div>
         </div>
     </div>
 
-    <div class="col-12 col-sm-6 col-xl-3">
+    <div class="col-12 col-sm-6 col-xl">
         <div class="sf-kpi sf-kpi-vedette">
             <div class="sf-kpi-label">Valeur du stock</div>
-            <div class="sf-kpi-valeur">{{ kpis.valeur_stock|floatformat:0 }}<span class="sf-unite">F</span></div>
+            <div class="sf-kpi-valeur">{{ kpis.valeur_stock|floatformat:0|intcomma }}<span class="sf-unite">F</span></div>
             <div class="sf-kpi-note">au prix d'achat</div>
         </div>
     </div>
 
-    <div class="col-12 col-sm-6 col-xl-3">
+    <div class="col-12 col-sm-6 col-xl">
         <div class="sf-kpi">
             <div class="sf-kpi-label">En alerte</div>
             <div class="sf-kpi-valeur {% if kpis.produits_en_alerte %}sf-alerte{% endif %}">{{ kpis.produits_en_alerte }}</div>
@@ -44,11 +53,24 @@
         </div>
     </div>
 
-    <div class="col-12 col-sm-6 col-xl-3">
+    <div class="col-12 col-sm-6 col-xl">
         <div class="sf-kpi">
-            <div class="sf-kpi-label">Activité récente</div>
-            <div class="sf-kpi-valeur">{{ kpis.mouvements_recents }}</div>
-            <div class="sf-kpi-note">mouvements sur {{ kpis.jours_activite }} jours</div>
+            <div class="sf-kpi-label">Mouvements</div>
+            <div class="sf-kpi-valeur">
+                {{ activite.entrees }}<span class="sf-unite"> / {{ activite.sorties }}</span>
+            </div>
+            <div class="sf-kpi-note">
+                entrées / sorties
+                {% if activite.ajustements %} · {{ activite.ajustements }} ajustement{{ activite.ajustements|pluralize }}{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl">
+        <div class="sf-kpi">
+            <div class="sf-kpi-label">Sorties valorisées</div>
+            <div class="sf-kpi-valeur">{{ activite.valeur_sorties|floatformat:0|intcomma }}<span class="sf-unite">F</span></div>
+            <div class="sf-kpi-note">sur {{ activite.jours }} jour{{ activite.jours|pluralize }}, au prix d'achat</div>
         </div>
     </div>
 </div>
@@ -67,7 +89,7 @@
                     <div class="sf-ligne-barre">
                         <div class="d-flex justify-content-between align-items-baseline">
                             <span style="font-size:13.5px;">{{ categorie.nom }}</span>
-                            <span class="sf-chiffre" style="font-size:13px;">{{ categorie.valeur|floatformat:0 }} F</span>
+                            <span class="sf-chiffre" style="font-size:13px;">{{ categorie.valeur|floatformat:0|intcomma }} F</span>
                         </div>
                         <div class="sf-barre-piste">
                             <div class="sf-barre-remplissage" style="width: {{ categorie.pourcentage }}%;"></div>
@@ -89,7 +111,7 @@
             <div class="sf-carte-entete">
                 <span>Produits en alerte</span>
                 {% if perms.inventory.view_produit %}
-                    <a href="{% url 'inventory:produit_liste' %}?stock_bas=1" class="sf-kpi-note m-0 text-decoration-none">Tout voir</a>
+                    <a href="{% url 'inventory:produit_liste' %}?etat=sous_seuil" class="sf-kpi-note m-0 text-decoration-none">Tout voir</a>
                 {% endif %}
             </div>
             {% if produits_en_alerte %}
@@ -124,46 +146,88 @@
     </div>
 </div>
 
-{# ---------- 10 derniers mouvements ---------- #}
-<div class="sf-carte">
-    <div class="sf-carte-entete">
-        <span>10 derniers mouvements</span>
-        {% if perms.inventory.view_mouvement %}
-            <a href="{% url 'inventory:mouvement_liste' %}" class="sf-kpi-note m-0 text-decoration-none">Historique complet</a>
-        {% endif %}
+<div class="row g-3">
+
+    {# ---------- Produits les plus mouvementés ---------- #}
+    <div class="col-12 col-xl-5">
+        <div class="sf-carte h-100">
+            <div class="sf-carte-entete">
+                <span>Produits les plus mouvementés</span>
+                <span class="sf-kpi-note m-0">{{ activite.jours }} jour{{ activite.jours|pluralize }}</span>
+            </div>
+            {% if plus_mouvementes %}
+                <div class="table-responsive">
+                    <table class="sf-table">
+                        <thead>
+                            <tr>
+                                <th>Produit</th>
+                                <th class="text-end sf-num">Sorties</th>
+                                <th class="text-end sf-num">Restant</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for produit in plus_mouvementes %}
+                                <tr>
+                                    <td><a href="{{ produit.get_absolute_url }}">{{ produit.nom }}</a></td>
+                                    <td class="text-end sf-num fw-semibold">{{ produit.total_sorties|intcomma }}</td>
+                                    <td class="text-end sf-num {% if produit.quantite_stock == 0 %}text-danger fw-semibold{% elif produit.stock_bas %}text-warning-emphasis{% endif %}">
+                                        {{ produit.quantite_stock|intcomma }}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="sf-vide">
+                    <div class="sf-vide-titre">Aucune sortie sur la période</div>
+                    <p class="mb-0">Élargissez la période pour voir l'activité.</p>
+                </div>
+            {% endif %}
+        </div>
     </div>
-    {% if derniers_mouvements %}
-        <div class="table-responsive">
-            <table class="sf-table">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Produit</th>
-                        <th>Type</th>
-                        <th class="text-end sf-num">Quantité</th>
-                        <th>Motif</th>
-                        <th>Par</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for mouvement in derniers_mouvements %}
-                        <tr>
-                            <td class="sf-num text-nowrap">{{ mouvement.date_mouvement|date:"d/m · H:i" }}</td>
-                            <td><a href="{{ mouvement.produit.get_absolute_url }}">{{ mouvement.produit.nom }}</a></td>
-                            <td>{% include "inventory/_badge_mouvement.html" %}</td>
-                            <td class="text-end sf-num fw-semibold">{{ mouvement.quantite }}</td>
-                            <td class="text-secondary">{{ mouvement.motif|default:"—" }}</td>
-                            <td class="text-secondary">{{ mouvement.utilisateur.username|default:"—" }}</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+
+    {# ---------- 10 derniers mouvements ---------- #}
+    <div class="col-12 col-xl-7">
+        <div class="sf-carte h-100">
+            <div class="sf-carte-entete">
+                <span>10 derniers mouvements</span>
+                {% if perms.inventory.view_mouvement %}
+                    <a href="{% url 'inventory:mouvement_liste' %}" class="sf-kpi-note m-0 text-decoration-none">Historique complet</a>
+                {% endif %}
+            </div>
+            {% if derniers_mouvements %}
+                <div class="table-responsive">
+                    <table class="sf-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Produit</th>
+                                <th>Type</th>
+                                <th class="text-end sf-num">Qté</th>
+                                <th>Par</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for mouvement in derniers_mouvements %}
+                                <tr>
+                                    <td class="sf-num text-nowrap">{{ mouvement.date_mouvement|date:"d/m · H:i" }}</td>
+                                    <td><a href="{{ mouvement.produit.get_absolute_url }}">{{ mouvement.produit.nom }}</a></td>
+                                    <td>{% include "inventory/_badge_mouvement.html" %}</td>
+                                    <td class="text-end sf-num fw-semibold">{{ mouvement.quantite }}</td>
+                                    <td class="text-secondary">{{ mouvement.utilisateur.username|default:"—" }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="sf-vide">
+                    <div class="sf-vide-titre">Aucun mouvement enregistré</div>
+                    <p class="mb-0">Les entrées et sorties de stock apparaîtront ici.</p>
+                </div>
+            {% endif %}
         </div>
-    {% else %}
-        <div class="sf-vide">
-            <div class="sf-vide-titre">Aucun mouvement enregistré</div>
-            <p class="mb-0">Les entrées et sorties de stock apparaîtront ici.</p>
-        </div>
-    {% endif %}
+    </div>
 </div>
 {% endblock %}

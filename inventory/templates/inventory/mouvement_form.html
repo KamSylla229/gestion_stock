@@ -1,22 +1,32 @@
 {% extends "base.html" %}
+{% load humanize %}
 
 {% block titre %}{{ titre }} — StockFlow{% endblock %}
 
 {% block contenu %}
 <div class="sf-entete">
     <div>
-        <h1 class="sf-titre">Enregistrer une {% if type_mouvement == "ENTREE" %}entrée{% else %}sortie{% endif %}</h1>
+        <h1 class="sf-titre">
+            {% if type_mouvement == "ENTREE" %}Enregistrer une entrée
+            {% elif type_mouvement == "SORTIE" %}Enregistrer une sortie
+            {% else %}Enregistrer un ajustement{% endif %}
+        </h1>
         <p class="sf-sous-titre">
             {% if type_mouvement == "ENTREE" %}
                 Le stock est incrémenté immédiatement et le mouvement est enregistré définitivement
-            {% else %}
+            {% elif type_mouvement == "SORTIE" %}
                 Le stock est décrémenté immédiatement et le mouvement est enregistré définitivement
+            {% else %}
+                Constat de perte : casse, vol ou écart d'inventaire. Le motif est obligatoire.
             {% endif %}
         </p>
     </div>
     {% if perms.inventory.view_mouvement %}
         <a href="{% url 'inventory:mouvement_liste' %}?type={{ type_mouvement }}" class="btn sf-btn-secondaire">
-            Voir {% if type_mouvement == "ENTREE" %}les entrées{% else %}les sorties{% endif %}
+            Voir
+            {% if type_mouvement == "ENTREE" %}les entrées
+            {% elif type_mouvement == "SORTIE" %}les sorties
+            {% else %}les ajustements{% endif %}
         </a>
     {% endif %}
 </div>
@@ -25,7 +35,11 @@
     <div class="col-12 col-xl-8">
         <div class="sf-carte">
             <div class="sf-carte-entete">
-                <span>Nouvelle {% if type_mouvement == "ENTREE" %}entrée{% else %}sortie{% endif %}</span>
+                <span>
+                    {% if type_mouvement == "ENTREE" %}Nouvelle entrée
+                    {% elif type_mouvement == "SORTIE" %}Nouvelle sortie
+                    {% else %}Nouvel ajustement{% endif %}
+                </span>
                 <span class="sf-kpi-note m-0">{{ user.username }}</span>
             </div>
             <div class="sf-carte-corps">
@@ -54,8 +68,10 @@
                     <div class="d-flex flex-wrap gap-2 pt-1">
                         {% if type_mouvement == "ENTREE" %}
                             <button type="submit" class="btn sf-btn-vert">Enregistrer l'entrée</button>
-                        {% else %}
+                        {% elif type_mouvement == "SORTIE" %}
                             <button type="submit" class="btn sf-btn-danger">Enregistrer la sortie</button>
+                        {% else %}
+                            <button type="submit" class="btn sf-btn-principal">Enregistrer l'ajustement</button>
                         {% endif %}
                         <a href="{% url 'inventory:produit_liste' %}" class="btn sf-btn-secondaire">Annuler</a>
                     </div>
@@ -79,33 +95,66 @@
                 <table class="sf-table">
                     <tbody>
                         <tr>
+                            <td class="text-secondary">
+                                {% if type_mouvement == "ENTREE" %}Entrées aujourd'hui{% elif type_mouvement == "SORTIE" %}Sorties aujourd'hui{% else %}Ajustements aujourd'hui{% endif %}
+                            </td>
+                            <td class="text-end sf-num">{{ mouvements_du_jour }}</td>
+                        </tr>
+                        <tr>
                             <td class="text-secondary">Prix d'achat</td>
-                            <td class="text-end sf-num">{{ produit_selectionne.prix_achat|floatformat:0 }} F</td>
+                            <td class="text-end sf-num">{{ produit_selectionne.prix_achat|floatformat:0|intcomma }} F</td>
                         </tr>
                         <tr>
                             <td class="text-secondary">Valeur du stock</td>
-                            <td class="text-end sf-num">{{ valeur_stock_selectionne|floatformat:0 }} F</td>
+                            <td class="text-end sf-num">{{ valeur_stock_selectionne|floatformat:0|intcomma }} F</td>
                         </tr>
+                        {% if valeur_mouvement %}
+                            <tr>
+                                <td class="text-secondary fw-semibold">
+                                    Valeur {% if type_mouvement == "ENTREE" %}de l'entrée{% elif type_mouvement == "SORTIE" %}de la sortie{% else %}de l'ajustement{% endif %}
+                                </td>
+                                <td class="text-end sf-num fw-semibold">{{ valeur_mouvement|floatformat:0|intcomma }} F</td>
+                            </tr>
+                        {% endif %}
                     </tbody>
                 </table>
+
+                {% if type_mouvement != "ENTREE" and produit_selectionne.quantite_stock %}
+                    <div class="p-3 pt-0">
+                        <a href="?produit={{ produit_selectionne.pk }}&amp;quantite={{ produit_selectionne.quantite_stock }}"
+                           class="btn btn-sm sf-btn-secondaire w-100">
+                            Tout sortir ({{ produit_selectionne.quantite_stock }})
+                        </a>
+                    </div>
+                {% endif %}
             </div>
         {% endif %}
 
         <div class="sf-carte">
             <div class="sf-carte-entete">Ce que fait l'application</div>
             <div class="sf-carte-corps d-flex flex-column gap-2">
-                <div class="sf-note sf-note-neutre">
-                    Refuse toute sortie supérieure au stock disponible : la transaction
-                    est annulée en entier, le stock ne bouge pas.
-                </div>
+                {% if type_mouvement != "ENTREE" %}
+                    <div class="sf-note sf-note-neutre">
+                        Refuse toute quantité supérieure au stock disponible : la
+                        transaction est annulée en entier, le stock ne bouge pas.
+                    </div>
+                {% endif %}
                 <div class="sf-note sf-note-neutre">
                     Met à jour le stock et enregistre le mouvement dans une seule
                     opération : les deux réussissent, ou aucune.
                 </div>
-                <div class="sf-note sf-note-neutre">
-                    Envoie un email au gérant dès qu'une sortie fait franchir le
-                    seuil d'alerte d'un produit.
-                </div>
+                {% if type_mouvement != "ENTREE" %}
+                    <div class="sf-note sf-note-neutre">
+                        Envoie un email au gérant dès que le stock franchit le seuil
+                        d'alerte du produit.
+                    </div>
+                {% endif %}
+                {% if type_mouvement == "AJUSTEMENT" %}
+                    <div class="sf-note sf-note-ambre">
+                        Pour corriger un stock à la hausse, enregistrez une entrée
+                        avec le motif « Régularisation ».
+                    </div>
+                {% endif %}
             </div>
         </div>
     </div>

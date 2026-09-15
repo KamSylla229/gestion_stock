@@ -7,36 +7,40 @@ a été tenu fermé pour livrer un produit fiable plutôt qu'un produit large.
 
 # Écart avec les maquettes de référence
 
-La refonte visuelle (commit `ea19f94`) a repris l'identité des maquettes sur les
-7 écrans existants. Les éléments ci-dessous apparaissent dans les maquettes mais
-n'ont **pas** été construits : ils demandent des champs, des calculs ou des
-écrans qui n'existent pas encore.
+La refonte visuelle (`ea19f94`) a repris l'identité des maquettes sur les
+7 écrans existants. Les blocs **A** et **B** ont ensuite été livrés.
 
-Ils sont classés par **prérequis technique**, pas par écran : c'est ce qui
+Restent à faire : **C** (champs sur Produit / Fournisseur), **D** (écrans
+entiers), **E** (indicateurs dont la règle de calcul doit être tranchée) et
+**F** (hors périmètre v1).
+
+Le classement est fait par **prérequis technique**, pas par écran : c'est ce qui
 détermine l'ordre de réalisation.
 
-## A. Sans modification du schéma — gains rapides
+## A. Sans modification du schéma — FAIT
 
-Réalisables immédiatement avec les données actuelles.
+Livrés sans toucher au schéma. `django.contrib.humanize` a été préféré à
+`USE_THOUSAND_SEPARATOR` : ce dernier aurait aussi formaté les identifiants
+(`value="1 234"` dans les listes déroulantes), cassant les formulaires.
 
 | # | Élément | Écran |
 |---|---|---|
-| A1 | Séparateur de milliers sur les montants (`18 450 000 F` au lieu de `18450000`) — `USE_THOUSAND_SEPARATOR = True` | partout |
-| A2 | Colonne « Valeur » (stock × prix d'achat) dans la liste des produits | Produits |
-| A3 | Onglets d'état complets : Tous / En stock / Sous seuil / Rupture / Désactivés | Produits |
-| A4 | Pagination numérotée (1 2 3 … 10) au lieu de Précédent / Suivant | Produits, Historique |
-| A5 | KPI « Mouvements du jour » séparés entrées / sorties (12 / 9) | Tableau de bord |
-| A6 | KPI « Sorties de la semaine » valorisées au prix d'achat | Tableau de bord |
-| A7 | Carte « Produits les plus mouvementés » (sorties et restant sur 7 jours) | Tableau de bord |
-| A8 | Sélecteur de période Jour / 7 jours / Mois | Tableau de bord |
-| A9 | KPI fiche produit : sorties sur 30 jours, moyenne par jour, couverture en jours, dernière entrée | Fiche produit |
-| A10 | Marge affichée en pourcentage en plus du montant | Fiche produit |
-| A11 | Coordonnées du fournisseur complètes sur la fiche produit (déjà en base, partiellement affichées) | Fiche produit |
+| ~~A1~~ | Séparateur de milliers sur les montants (`18 450 000 F` au lieu de `18450000`) — `USE_THOUSAND_SEPARATOR = True` | partout |
+| ~~A2~~ | Colonne « Valeur » (stock × prix d'achat) dans la liste des produits | Produits |
+| ~~A3~~ | Onglets d'état complets : Tous / En stock / Sous seuil / Rupture / Désactivés | Produits |
+| ~~A4~~ | Pagination numérotée (1 2 3 … 10) au lieu de Précédent / Suivant | Produits, Historique |
+| ~~A5~~ | KPI « Mouvements du jour » séparés entrées / sorties (12 / 9) | Tableau de bord |
+| ~~A6~~ | KPI « Sorties de la semaine » valorisées au prix d'achat | Tableau de bord |
+| ~~A7~~ | Carte « Produits les plus mouvementés » (sorties et restant sur 7 jours) | Tableau de bord |
+| ~~A8~~ | Sélecteur de période Jour / 7 jours / Mois | Tableau de bord |
+| ~~A9~~ | KPI fiche produit : sorties sur 30 jours, moyenne par jour, couverture en jours, dernière entrée | Fiche produit |
+| ~~A10~~ | Marge affichée en pourcentage en plus du montant | Fiche produit |
+| ~~A11~~ | Coordonnées du fournisseur complètes sur la fiche produit (déjà en base, partiellement affichées) | Fiche produit |
 | ~~A12~~ | ~~Recherche libre dans l'historique~~ — livré avec le bloc B | Historique |
-| A13 | Export Excel de l'**historique des mouvements** (l'export actuel ne porte que sur l'état du stock) | Historique |
-| A14 | Bouton « Sortir tout le stock disponible » | Sortie |
-| A15 | Compteurs « Sorties aujourd'hui » et « Valeur de la sortie » dans le panneau latéral | Sortie |
-| A16 | Encadré conseil « Le seuil a été franchi N fois en 30 jours » | Fiche produit |
+| ~~A13~~ | Export Excel de l'**historique des mouvements** (l'export actuel ne porte que sur l'état du stock) | Historique |
+| ~~A14~~ | Bouton « Sortir tout le stock disponible » | Sortie |
+| ~~A15~~ | Compteurs « Sorties aujourd'hui » et « Valeur de la sortie » dans le panneau latéral | Sortie |
+| ~~A16~~ | Encadré conseil « Le seuil a été franchi N fois en 30 jours » | Fiche produit |
 
 ## B. Champs sur `Mouvement` — FAIT
 

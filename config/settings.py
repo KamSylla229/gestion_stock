@@ -48,6 +48,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # Fournit le filtre intcomma : 18 450 000 au lieu de 18450000.
+    # Préféré à USE_THOUSAND_SEPARATOR, qui formaterait aussi les
+    # identifiants (value="1 234" dans les formulaires).
+    'django.contrib.humanize',
     'inventory',
 ]
 

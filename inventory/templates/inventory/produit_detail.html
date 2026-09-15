@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load humanize %}
 
 {% block titre %}{{ produit.nom }} — StockFlow{% endblock %}
 
@@ -47,30 +48,41 @@
     <div class="col-12 col-sm-6 col-xl-3">
         <div class="sf-kpi">
             <div class="sf-kpi-label">Valeur immobilisée</div>
-            <div class="sf-kpi-valeur">{{ valeur_immobilisee|floatformat:0 }}<span class="sf-unite">F</span></div>
-            <div class="sf-kpi-note">{{ produit.quantite_stock }} × {{ produit.prix_achat|floatformat:0 }} F</div>
+            <div class="sf-kpi-valeur">{{ valeur_immobilisee|floatformat:0|intcomma }}<span class="sf-unite">F</span></div>
+            <div class="sf-kpi-note">{{ produit.quantite_stock }} × {{ produit.prix_achat|floatformat:0|intcomma }} F</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl-3">
         <div class="sf-kpi">
-            <div class="sf-kpi-label">Prix de vente</div>
-            <div class="sf-kpi-valeur">{{ produit.prix_vente|floatformat:0 }}<span class="sf-unite">F</span></div>
-            <div class="sf-kpi-note">marge unitaire {{ marge_unitaire|floatformat:0 }} F</div>
+            <div class="sf-kpi-label">Sorties sur {{ stats.jours }} jours</div>
+            <div class="sf-kpi-valeur">{{ stats.sorties_total|intcomma }}</div>
+            <div class="sf-kpi-note">{{ stats.sorties_moyenne }} par jour en moyenne</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl-3">
         <div class="sf-kpi">
-            <div class="sf-kpi-label">Dernier mouvement</div>
-            <div class="sf-kpi-valeur" style="font-size:19px;">
-                {% if dernier_mouvement %}{{ dernier_mouvement.date_mouvement|date:"j M" }}{% else %}—{% endif %}
-            </div>
-            <div class="sf-kpi-note">
-                {% if dernier_mouvement %}
-                    {{ dernier_mouvement.get_type_mouvement_display|lower }} de {{ dernier_mouvement.quantite }}
-                {% else %}
-                    aucun mouvement
-                {% endif %}
-            </div>
+            <div class="sf-kpi-label">Couverture</div>
+            {% if stats.couverture is not None %}
+                <div class="sf-kpi-valeur {% if stats.couverture < 7 %}sf-alerte{% endif %}">
+                    {{ stats.couverture }}<span class="sf-unite">jours</span>
+                </div>
+                <div class="sf-kpi-note">au rythme actuel</div>
+            {% else %}
+                <div class="sf-kpi-valeur" style="font-size:19px;">—</div>
+                <div class="sf-kpi-note">aucune sortie sur {{ stats.jours }} jours</div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="sf-kpi">
+            <div class="sf-kpi-label">Dernière entrée</div>
+            {% if stats.derniere_entree %}
+                <div class="sf-kpi-valeur" style="font-size:19px;">{{ stats.derniere_entree.date_mouvement|date:"j M" }}</div>
+                <div class="sf-kpi-note">{{ stats.derniere_entree.quantite|intcomma }} unités reçues</div>
+            {% else %}
+                <div class="sf-kpi-valeur" style="font-size:19px;">—</div>
+                <div class="sf-kpi-note">aucune entrée enregistrée</div>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -83,9 +95,17 @@
                 <tbody>
                     <tr><td class="text-secondary">Référence</td><td class="text-end sf-ref">{{ produit.reference }}</td></tr>
                     <tr><td class="text-secondary">Catégorie</td><td class="text-end">{{ produit.categorie.nom }}</td></tr>
-                    <tr><td class="text-secondary">Prix d'achat</td><td class="text-end sf-num">{{ produit.prix_achat|floatformat:0 }} F</td></tr>
-                    <tr><td class="text-secondary">Prix de vente</td><td class="text-end sf-num">{{ produit.prix_vente|floatformat:0 }} F</td></tr>
-                    <tr><td class="text-secondary">Marge unitaire</td><td class="text-end sf-num" style="color:var(--sf-vert);">{{ marge_unitaire|floatformat:0 }} F</td></tr>
+                    <tr><td class="text-secondary">Prix d'achat</td><td class="text-end sf-num">{{ produit.prix_achat|floatformat:0|intcomma }} F</td></tr>
+                    <tr><td class="text-secondary">Prix de vente</td><td class="text-end sf-num">{{ produit.prix_vente|floatformat:0|intcomma }} F</td></tr>
+                    <tr>
+                        <td class="text-secondary">Marge unitaire</td>
+                        <td class="text-end sf-num" style="color:var(--sf-vert);">
+                            {{ marge_unitaire|floatformat:0|intcomma }} F
+                            {% if marge_pourcentage is not None %}
+                                <span class="text-secondary"> · {{ marge_pourcentage|floatformat:0 }} %</span>
+                            {% endif %}
+                        </td>
+                    </tr>
                     <tr><td class="text-secondary">Seuil d'alerte</td><td class="text-end sf-num">{{ produit.seuil_alerte }}</td></tr>
                 </tbody>
             </table>
@@ -113,12 +133,20 @@
                     <p class="mb-0">Renseignez-le pour savoir qui contacter en cas de rupture.</p>
                 </div>
             {% endif %}
-            {% if produit.stock_bas %}
-                <div class="px-3 pb-3">
-                    <div class="sf-note sf-note-ambre">
-                        Stock au niveau ou sous le seuil d'alerte ({{ produit.seuil_alerte }}).
-                        Le gérant a été prévenu par email au franchissement du seuil.
-                    </div>
+            {% if produit.stock_bas or stats.franchissements_seuil > 1 %}
+                <div class="px-3 pb-3 d-flex flex-column gap-2">
+                    {% if produit.stock_bas %}
+                        <div class="sf-note sf-note-ambre">
+                            Stock au niveau ou sous le seuil d'alerte ({{ produit.seuil_alerte }}).
+                            Le gérant a été prévenu par email au franchissement du seuil.
+                        </div>
+                    {% endif %}
+                    {% if stats.franchissements_seuil > 1 %}
+                        <div class="sf-note sf-note-neutre">
+                            Le seuil a été franchi {{ stats.franchissements_seuil }} fois en
+                            {{ stats.jours }} jours. Un seuil plus haut réduirait le risque de rupture.
+                        </div>
+                    {% endif %}
                 </div>
             {% endif %}
         </div>

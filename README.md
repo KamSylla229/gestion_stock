@@ -48,11 +48,13 @@ Conséquences concrètes :
 - Les 20 derniers mouvements sur chaque fiche produit
 
 **Pilotage**
-- Tableau de bord avec 4 indicateurs clés
-- Liste des produits à réapprovisionner
+- Tableau de bord : 5 indicateurs, période ajustable (jour / 7 jours / mois)
+- Valeur du stock ventilée par catégorie
+- Produits à réapprovisionner et produits les plus mouvementés
+- Par produit : rythme de sortie, couverture en jours, dernière entrée
 - Alertes email automatiques
 - Rapport quotidien par email
-- Export Excel de l'état du stock
+- Export Excel de l'état du stock **et** de l'historique des mouvements
 
 **Sécurité**
 - Authentification obligatoire sur toute l'application
@@ -64,10 +66,13 @@ Quatre indicateurs, calculés en base de données (`aggregate` / `annotate`) :
 
 | Indicateur | Ce qu'il dit au gérant |
 |---|---|
-| **Produits actifs** | Taille réelle du catalogue exploité, et nombre total d'unités en stock |
+| **Références actives** | Taille réelle du catalogue exploité, et nombre total d'unités en stock |
 | **Valeur du stock** | Argent immobilisé (quantité × prix d'achat) |
-| **À réapprovisionner** | Produits au niveau ou sous leur seuil, dont ceux en rupture totale |
-| **Activité récente** | Nombre de mouvements sur les 7 derniers jours |
+| **En alerte** | Produits au niveau ou sous leur seuil, dont ceux en rupture totale |
+| **Mouvements** | Entrées et sorties sur la période choisie |
+| **Sorties valorisées** | Ce qui est sorti du stock sur la période, au prix d'achat |
+
+La période se règle en haut de page : jour, 7 jours ou mois.
 
 Le tableau de bord affiche également la ventilation de la valeur du stock par
 catégorie, la liste des produits à réapprovisionner (triés du plus critique au
@@ -101,10 +106,15 @@ python manage.py rapport_quotidien --jour 2026-09-14
 Il contient l'état du stock, les mouvements de la journée (entrées et sorties,
 en nombre et en quantité) et la liste des produits à réapprovisionner.
 
-**Export Excel.** Depuis la liste des produits ou le tableau de bord. Le fichier
-est généré à la volée : en-têtes en gras, filtre automatique, volets figés,
-formats numériques, et colonne Statut colorée (rupture / sous seuil / normal).
-L'export respecte les filtres appliqués à l'écran.
+**Export Excel.** Deux exports, tous deux générés à la volée et respectant les
+filtres appliqués à l'écran :
+
+- **État du stock** — depuis la liste des produits ou le tableau de bord
+- **Historique des mouvements** — depuis la page Historique
+
+En-têtes en gras, filtre automatique, volets figés, formats numériques, et
+colonne colorée selon la situation (rupture / sous seuil / normal pour le stock,
+entrée / sortie / ajustement pour l'historique).
 
 ## Stack
 
@@ -202,7 +212,7 @@ masquer un lien ne suffit pas, l'accès direct à l'URL est refusé par un 403.
 python manage.py test
 ```
 
-84 tests couvrent la logique métier (entrées, sorties, stock insuffisant,
+127 tests couvrent la logique métier (entrées, sorties, stock insuffisant,
 quantité nulle, transaction atomique), les alertes email, les KPI du tableau de
 bord, l'export Excel, les permissions par rôle et le parcours utilisateur complet.
 

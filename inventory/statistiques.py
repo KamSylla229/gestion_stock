@@ -81,6 +81,148 @@ def valeur_par_categorie():
     return categories
 
 
+# Périodes proposées par le sélecteur du tableau de bord.
+PERIODES = [
+    ("jour", "Jour", 1),
+    ("semaine", "7 jours", 7),
+    ("mois", "Mois", 30),
+]
+PERIODE_PAR_DEFAUT = "semaine"
+
+
+def jours_de_la_periode(cle: str) -> int:
+    """Nombre de jours correspondant à une clé de période, 7 par défaut."""
+    for code, _, jours in PERIODES:
+        if code == cle:
+            return jours
+    return 7
+
+
+def activite_periode(jours: int = 7) -> dict:
+    """
+    Activité sur les N derniers jours : nombre de mouvements par type et
+    valeur des sorties au prix d'achat.
+    """
+    depuis = timezone.now() - timedelta(days=jours)
+    mouvements = Mouvement.objects.filter(date_mouvement__gte=depuis)
+
+    compteurs = {type_mouvement: 0 for type_mouvement, _ in Mouvement.TYPE_CHOICES}
+    for ligne in mouvements.values("type_mouvement").annotate(nombre=Count("id")):
+        compteurs[ligne["type_mouvement"]] = ligne["nombre"]
+
+    valeur_sorties = mouvements.filter(
+        type_mouvement__in=Mouvement.TYPES_SORTANTS
+    ).aggregate(
+        total=Coalesce(
+            Sum(
+                F("quantite") * F("produit__prix_achat"),
+                output_field=CHAMP_MONETAIRE,
+            ),
+            Decimal("0.00"),
+            output_field=CHAMP_MONETAIRE,
+        )
+    )["total"]
+
+    return {
+        "jours": jours,
+        "entrees": compteurs[Mouvement.ENTREE],
+        "sorties": compteurs[Mouvement.SORTIE],
+        "ajustements": compteurs[Mouvement.AJUSTEMENT],
+        "total": sum(compteurs.values()),
+        "valeur_sorties": valeur_sorties,
+    }
+
+
+def produits_les_plus_mouvementes(jours: int = 7, limite: int = 5):
+    """
+    Produits ayant le plus quitté le stock sur la période.
+
+    annotate() additionne les quantités sorties par produit côté base ;
+    filter() dans l'agrégat ne compte que les mouvements de la période.
+    """
+    depuis = timezone.now() - timedelta(days=jours)
+    return (
+        Produit.objects.annotate(
+            total_sorties=Coalesce(
+                Sum(
+                    "mouvements__quantite",
+                    filter=Q(
+                        mouvements__date_mouvement__gte=depuis,
+                        mouvements__type_mouvement__in=Mouvement.TYPES_SORTANTS,
+                    ),
+                ),
+                0,
+            )
+        )
+        .filter(total_sorties__gt=0)
+        .order_by("-total_sorties", "nom")[:limite]
+    )
+
+
+def statistiques_produit(produit, jours: int = 30) -> dict:
+    """
+    Indicateurs d'une fiche produit sur les N derniers jours.
+
+    - sorties_total / sorties_moyenne : rythme de consommation
+    - couverture : jours de stock restants à ce rythme
+    - derniere_entree : dernier réapprovisionnement
+    - franchissements_seuil : nombre de fois où le stock est passé sous le
+      seuil, utile pour conseiller un seuil mieux calibré
+    """
+    depuis = timezone.now() - timedelta(days=jours)
+
+    sortant = produit.mouvements.filter(
+        type_mouvement__in=Mouvement.TYPES_SORTANTS, date_mouvement__gte=depuis
+    )
+    total_sorties = sortant.aggregate(total=Coalesce(Sum("quantite"), 0))["total"]
+    moyenne = total_sorties / jours if total_sorties else 0
+
+    couverture = int(produit.quantite_stock / moyenne) if moyenne else None
+
+    derniere_entree = (
+        produit.mouvements.filter(type_mouvement=Mouvement.ENTREE)
+        .order_by("-date_mouvement", "-id")
+        .first()
+    )
+
+    return {
+        "jours": jours,
+        "sorties_total": total_sorties,
+        "sorties_moyenne": round(moyenne, 1),
+        "couverture": couverture,
+        "derniere_entree": derniere_entree,
+        "franchissements_seuil": compter_franchissements_seuil(produit, depuis),
+    }
+
+
+def compter_franchissements_seuil(produit, depuis) -> int:
+    """
+    Compte les passages du stock AU-DESSUS du seuil vers le seuil ou en dessous.
+
+    On relit les mouvements de la période dans l'ordre chronologique et on
+    compte les transitions : deux mouvements consécutifs sous le seuil ne
+    comptent que pour un seul franchissement.
+
+    Les mouvements antérieurs au champ stock_apres sont ignorés (valeur nulle).
+    Le volume reste faible : un seul produit, sur une période courte.
+    """
+    seuil = produit.seuil_alerte
+    etats = (
+        produit.mouvements.filter(date_mouvement__gte=depuis, stock_apres__isnull=False)
+        .order_by("date_mouvement", "id")
+        .values_list("stock_apres", flat=True)
+    )
+
+    franchissements = 0
+    au_dessus = True
+    for stock_apres in etats:
+        sous_le_seuil = stock_apres <= seuil
+        if sous_le_seuil and au_dessus:
+            franchissements += 1
+        au_dessus = not sous_le_seuil
+    return franchissements
+
+
 def produits_en_alerte():
     """Produits actifs dont le stock est au niveau ou en dessous du seuil."""
     return (

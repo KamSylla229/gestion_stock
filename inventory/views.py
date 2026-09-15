@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import F, Q
 from django.http import HttpResponse
 from django.shortcuts import redirect
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView
 
@@ -24,6 +25,30 @@ def querystring_sans_page(request):
     return parametres.urlencode()
 
 
+def pages_affichees(contexte):
+    """
+    Numéros de pages à afficher, avec des « … » à la place des pages du milieu
+    quand elles sont nombreuses. Vide si la liste tient sur une seule page.
+    """
+    page = contexte.get("page_obj")
+    if page is None or page.paginator.num_pages <= 1:
+        return []
+    # get_elided_page_range est un générateur : sans list(), il serait vidé par
+    # le premier parcours du template et vide pour tout lecteur suivant.
+    return list(page.paginator.get_elided_page_range(page.number))
+
+
+def resume_pagination(contexte, nom_singulier: str) -> str:
+    """Texte « 20 produits sur 248 » affiché à gauche de la pagination."""
+    page = contexte.get("page_obj")
+    if page is None:
+        return ""
+    affiches = len(page.object_list)
+    total = page.paginator.count
+    pluriel = "s" if affiches > 1 else ""
+    return f"{affiches} {nom_singulier}{pluriel} sur {total}"
+
+
 def filtrer_produits(request):
     """
     Applique recherche et filtres aux produits, d'après les paramètres GET.
@@ -31,7 +56,23 @@ def filtrer_produits(request):
     Partagé par la liste des produits et l'export Excel : l'export porte donc
     exactement sur ce que l'utilisateur a à l'écran.
     """
-    queryset = Produit.objects.select_related("categorie", "fournisseur")
+    queryset = Produit.objects.select_related("categorie", "fournisseur").annotate(
+        # Valeur du stock de chaque ligne, calculée par la base.
+        valeur_stock=F("quantite_stock") * F("prix_achat"),
+    )
+
+    # État consolidé, utilisé par les onglets de la liste.
+    etat = request.GET.get("etat", "")
+    if etat == "en_stock":
+        queryset = queryset.filter(actif=True, quantite_stock__gt=F("seuil_alerte"))
+    elif etat == "sous_seuil":
+        queryset = queryset.filter(
+            actif=True, quantite_stock__gt=0, quantite_stock__lte=F("seuil_alerte")
+        )
+    elif etat == "rupture":
+        queryset = queryset.filter(actif=True, quantite_stock=0)
+    elif etat == "desactives":
+        queryset = queryset.filter(actif=False)
 
     recherche = request.GET.get("q", "").strip()
     if recherche:
@@ -70,10 +111,19 @@ class TableauBordView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView)
 
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
-        contexte["kpis"] = statistiques.kpis_stock()
+
+        # Période choisie par l'utilisateur (Jour / 7 jours / Mois).
+        periode = self.request.GET.get("periode", statistiques.PERIODE_PAR_DEFAUT)
+        jours = statistiques.jours_de_la_periode(periode)
+
+        contexte["kpis"] = statistiques.kpis_stock(jours_activite=jours)
+        contexte["activite"] = statistiques.activite_periode(jours)
         contexte["valeur_par_categorie"] = statistiques.valeur_par_categorie()
         contexte["produits_en_alerte"] = statistiques.produits_en_alerte()
+        contexte["plus_mouvementes"] = statistiques.produits_les_plus_mouvementes(jours)
         contexte["derniers_mouvements"] = statistiques.derniers_mouvements(10)
+        contexte["periodes"] = statistiques.PERIODES
+        contexte["periode_active"] = periode
         contexte["section"] = "tableau_bord"
         return contexte
 
@@ -98,6 +148,30 @@ class ExportStockExcelView(LoginRequiredMixin, PermissionRequiredMixin, ListView
         return reponse
 
 
+class ExportMouvementsExcelView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+    """
+    Télécharge l'historique des mouvements au format Excel, en respectant les
+    filtres appliqués à l'écran. Réservé au groupe Gerant.
+    """
+
+    permission_required = "inventory.exporter_stock"
+
+    def get(self, request, *args, **kwargs):
+        # On réutilise le filtrage de la vue historique : l'export porte
+        # exactement sur ce que l'utilisateur voit.
+        mouvements = MouvementListView(request=request).get_queryset()
+        classeur = exports.generer_classeur_mouvements(mouvements)
+
+        reponse = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        reponse["Content-Disposition"] = (
+            f'attachment; filename="{exports.nom_fichier_export("mouvements")}"'
+        )
+        classeur.save(reponse)
+        return reponse
+
+
 class ProduitListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     model = Produit
     paginate_by = 20
@@ -114,6 +188,8 @@ class ProduitListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         contexte["fournisseurs"] = Fournisseur.objects.all()
         contexte["filtres"] = self.request.GET
         contexte["querystring"] = querystring_sans_page(self.request)
+        contexte["pages_affichees"] = pages_affichees(contexte)
+        contexte["resume_pagination"] = resume_pagination(contexte, "produit")
         return contexte
 
 
@@ -130,7 +206,14 @@ class ProduitDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
         contexte["mouvements"] = mouvements
         contexte["dernier_mouvement"] = mouvements[0] if mouvements else None
         contexte["valeur_immobilisee"] = self.object.quantite_stock * self.object.prix_achat
-        contexte["marge_unitaire"] = self.object.prix_vente - self.object.prix_achat
+
+        marge = self.object.prix_vente - self.object.prix_achat
+        contexte["marge_unitaire"] = marge
+        contexte["marge_pourcentage"] = (
+            marge / self.object.prix_achat * 100 if self.object.prix_achat else None
+        )
+
+        contexte["stats"] = statistiques.statistiques_produit(self.object)
         return contexte
 
 
@@ -172,6 +255,11 @@ class MouvementCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView)
         produit = self.request.GET.get("produit", "")
         if produit.isdigit():
             initial["produit"] = produit
+        # Bouton « Sortir tout le stock disponible » : pré-remplit la quantité,
+        # sans JavaScript.
+        quantite = self.request.GET.get("quantite", "")
+        if quantite.isdigit():
+            initial["quantite"] = quantite
         return initial
 
     def get_form_kwargs(self):
@@ -191,7 +279,26 @@ class MouvementCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView)
         contexte["produit_selectionne"] = produit
         if produit:
             contexte["valeur_stock_selectionne"] = produit.quantite_stock * produit.prix_achat
+            contexte["mouvements_du_jour"] = produit.mouvements.filter(
+                type_mouvement=self.type_mouvement,
+                date_mouvement__date=timezone.localdate(),
+            ).count()
+            # Valeur du mouvement en cours, dès qu'une quantité est saisie.
+            quantite = self._quantite_saisie(contexte.get("form"))
+            if quantite:
+                contexte["valeur_mouvement"] = quantite * produit.prix_achat
         return contexte
+
+    @staticmethod
+    def _quantite_saisie(form):
+        """Quantité du formulaire, qu'il soit soumis ou simplement pré-rempli."""
+        if form is None:
+            return None
+        valeur = form.data.get("quantite") or form.initial.get("quantite")
+        try:
+            return int(valeur)
+        except (TypeError, ValueError):
+            return None
 
     def _produit_selectionne(self):
         """Produit issu du formulaire soumis, ou de l'URL (?produit=...)."""
@@ -304,4 +411,6 @@ class MouvementListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         )
         contexte["filtres"] = self.request.GET
         contexte["querystring"] = querystring_sans_page(self.request)
+        contexte["pages_affichees"] = pages_affichees(contexte)
+        contexte["resume_pagination"] = resume_pagination(contexte, "mouvement")
         return contexte

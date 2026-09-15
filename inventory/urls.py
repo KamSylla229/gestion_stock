@@ -12,6 +12,7 @@ urlpatterns = [
     # Tableau de bord et export (réservés au gérant)
     path("tableau-bord/", views.TableauBordView.as_view(), name="tableau_bord"),
     path("export/stock.xlsx", views.ExportStockExcelView.as_view(), name="export_stock_excel"),
+    path("export/mouvements.xlsx", views.ExportMouvementsExcelView.as_view(), name="export_mouvements_excel"),
 
     # Authentification (vues natives Django)
     path(

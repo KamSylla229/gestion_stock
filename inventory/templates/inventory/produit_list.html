@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load humanize %}
 
 {% block titre %}Produits — StockFlow{% endblock %}
 
@@ -6,7 +7,7 @@
 <div class="sf-entete">
     <div>
         <h1 class="sf-titre">Produits</h1>
-        <p class="sf-sous-titre">{{ page_obj.paginator.count|default:produits|length }} référence{{ page_obj.paginator.count|pluralize }} correspondant aux filtres</p>
+        <p class="sf-sous-titre">{{ page_obj.paginator.count|intcomma }} référence{{ page_obj.paginator.count|pluralize }} correspondant aux filtres</p>
     </div>
     <div class="d-flex flex-wrap gap-2">
         {% if perms.inventory.exporter_stock %}
@@ -24,11 +25,11 @@
 <div class="sf-carte mb-3">
     <div class="sf-carte-corps">
         <form method="get" class="row g-2 align-items-center">
-            <div class="col-12 col-lg-4">
+            <div class="col-12 col-lg-5">
                 <input type="text" name="q" class="form-control" placeholder="Rechercher par nom ou référence"
                        value="{{ filtres.q|default:'' }}" aria-label="Rechercher un produit">
             </div>
-            <div class="col-6 col-lg-2">
+            <div class="col-6 col-lg-3">
                 <select name="categorie" class="form-select" aria-label="Catégorie">
                     <option value="">Toutes catégories</option>
                     {% for categorie in categories %}
@@ -36,7 +37,7 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-6 col-lg-2">
+            <div class="col-6 col-lg-3">
                 <select name="fournisseur" class="form-select" aria-label="Fournisseur">
                     <option value="">Tous fournisseurs</option>
                     {% for fournisseur in fournisseurs %}
@@ -44,26 +45,26 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-6 col-lg-2">
-                <select name="actif" class="form-select" aria-label="Statut">
-                    <option value="">Tous statuts</option>
-                    <option value="1" {% if filtres.actif == "1" %}selected{% endif %}>Actifs</option>
-                    <option value="0" {% if filtres.actif == "0" %}selected{% endif %}>Désactivés</option>
-                </select>
-            </div>
-            <div class="col-6 col-lg-2 d-flex gap-2">
-                <button type="submit" class="btn sf-btn-secondaire flex-grow-1">Filtrer</button>
+            <div class="col-6 col-lg-1 d-grid">
+                <button type="submit" class="btn sf-btn-secondaire">Filtrer</button>
             </div>
 
-            <div class="col-12 d-flex flex-wrap gap-2 align-items-center pt-1">
-                <div class="sf-onglets">
-                    <a class="sf-onglet{% if not filtres.stock_bas %} actif{% endif %}"
-                       href="{% url 'inventory:produit_liste' %}">Tous</a>
-                    <a class="sf-onglet{% if filtres.stock_bas %} actif{% endif %}"
-                       href="{% url 'inventory:produit_liste' %}?stock_bas=1">Sous seuil et rupture</a>
-                </div>
-            </div>
+            {# L'onglet d'état est conservé quand on relance une recherche #}
+            {% if filtres.etat %}<input type="hidden" name="etat" value="{{ filtres.etat }}">{% endif %}
         </form>
+
+        <div class="sf-onglets mt-3">
+            <a class="sf-onglet{% if not filtres.etat %} actif{% endif %}"
+               href="{% url 'inventory:produit_liste' %}">Tous</a>
+            <a class="sf-onglet{% if filtres.etat == 'en_stock' %} actif{% endif %}"
+               href="?etat=en_stock">En stock</a>
+            <a class="sf-onglet{% if filtres.etat == 'sous_seuil' %} actif{% endif %}"
+               href="?etat=sous_seuil">Sous seuil</a>
+            <a class="sf-onglet{% if filtres.etat == 'rupture' %} actif{% endif %}"
+               href="?etat=rupture">Rupture</a>
+            <a class="sf-onglet{% if filtres.etat == 'desactives' %} actif{% endif %}"
+               href="?etat=desactives">Désactivés</a>
+        </div>
     </div>
 </div>
 
@@ -80,6 +81,7 @@
                         <th class="text-end sf-num">Stock</th>
                         <th class="text-end sf-num">Seuil</th>
                         <th class="text-end sf-num">Prix d'achat</th>
+                        <th class="text-end sf-num">Valeur</th>
                         <th>État</th>
                     </tr>
                 </thead>
@@ -91,10 +93,11 @@
                             <td class="text-secondary">{{ produit.categorie.nom }}</td>
                             <td class="text-secondary">{{ produit.fournisseur.nom|default:"—" }}</td>
                             <td class="text-end sf-num fw-semibold {% if produit.quantite_stock == 0 %}text-danger{% elif produit.stock_bas %}text-warning-emphasis{% endif %}">
-                                {{ produit.quantite_stock }}
+                                {{ produit.quantite_stock|intcomma }}
                             </td>
                             <td class="text-end sf-num text-secondary">{{ produit.seuil_alerte }}</td>
-                            <td class="text-end sf-num">{{ produit.prix_achat|floatformat:0 }}</td>
+                            <td class="text-end sf-num">{{ produit.prix_achat|floatformat:0|intcomma }}</td>
+                            <td class="text-end sf-num">{{ produit.valeur_stock|floatformat:0|intcomma }}</td>
                             <td>
                                 {% if not produit.actif %}
                                     <span class="sf-badge sf-badge-gris">Désactivé</span>
@@ -113,24 +116,11 @@
         </div>
 
         {% if is_paginated %}
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 py-2 border-top">
-                <span class="sf-kpi-note m-0">
-                    {{ produits|length }} produit{{ produits|length|pluralize }} sur {{ page_obj.paginator.count }}
-                </span>
-                <ul class="pagination pagination-sm mb-0">
-                    {% if page_obj.has_previous %}
-                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&{{ querystring }}">Précédent</a></li>
-                    {% endif %}
-                    <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
-                    {% if page_obj.has_next %}
-                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&{{ querystring }}">Suivant</a></li>
-                    {% endif %}
-                </ul>
-            </div>
+            {% include "inventory/_pagination.html" with resume=resume_pagination %}
         {% endif %}
     {% else %}
         <div class="sf-vide">
-            {% if filtres.q or filtres.categorie or filtres.fournisseur or filtres.actif or filtres.stock_bas %}
+            {% if filtres.q or filtres.categorie or filtres.fournisseur or filtres.actif or filtres.etat or filtres.stock_bas %}
                 <div class="sf-vide-titre">Aucun produit ne correspond à votre recherche</div>
                 <p>Essayez d'élargir les critères ou réinitialisez les filtres.</p>
                 <a href="{% url 'inventory:produit_liste' %}" class="btn btn-sm sf-btn-secondaire">Réinitialiser les filtres</a>

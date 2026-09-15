@@ -1257,3 +1257,421 @@ class RapportAvecAjustementsTests(BaseApplicationTestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("Ajustements", mail.outbox[0].alternatives[0][0])
         self.assertIn("Ajustements", mail.outbox[0].body)
+
+
+class OngletsEtatProduitsTests(BaseApplicationTestCase):
+    """Onglets Tous / En stock / Sous seuil / Rupture / Désactivés."""
+
+    def setUp(self):
+        creer_utilisateur("gerant", groupe="Gerant")
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+        self.categorie = Categorie.objects.create(nom="Alimentation")
+
+        def produit(reference, stock, seuil=10, actif=True):
+            return Produit.objects.create(
+                reference=reference, nom=f"Produit {reference}", categorie=self.categorie,
+                prix_achat=Decimal("1000.00"), prix_vente=Decimal("1500.00"),
+                quantite_stock=stock, seuil_alerte=seuil, actif=actif,
+            )
+
+        self.en_stock = produit("ET-001", 50)
+        self.sous_seuil = produit("ET-002", 5)
+        self.rupture = produit("ET-003", 0)
+        self.desactive = produit("ET-004", 30, actif=False)
+
+    def _produits(self, parametres=None):
+        reponse = self.client.get(reverse("inventory:produit_liste"), parametres or {})
+        self.assertEqual(reponse.status_code, 200)
+        return list(reponse.context["produits"])
+
+    def test_onglet_tous(self):
+        self.assertEqual(len(self._produits()), 4)
+
+    def test_onglet_en_stock(self):
+        self.assertEqual(self._produits({"etat": "en_stock"}), [self.en_stock])
+
+    def test_onglet_sous_seuil_exclut_les_ruptures(self):
+        """« Sous seuil » ne montre que ce qui a encore du stock."""
+        self.assertEqual(self._produits({"etat": "sous_seuil"}), [self.sous_seuil])
+
+    def test_onglet_rupture(self):
+        self.assertEqual(self._produits({"etat": "rupture"}), [self.rupture])
+
+    def test_onglet_desactives(self):
+        self.assertEqual(self._produits({"etat": "desactives"}), [self.desactive])
+
+    def test_etat_inconnu_ignore(self):
+        self.assertEqual(len(self._produits({"etat": "n_importe_quoi"})), 4)
+
+    def test_etat_combine_avec_la_recherche(self):
+        resultats = self._produits({"etat": "en_stock", "q": "ET-001"})
+        self.assertEqual(resultats, [self.en_stock])
+
+    def test_valeur_du_stock_annotee(self):
+        resultats = self._produits({"etat": "en_stock"})
+        self.assertEqual(resultats[0].valeur_stock, Decimal("50000.00"))  # 50 x 1000
+
+
+class ActivitePeriodeTests(BaseApplicationTestCase):
+    """Sélecteur de période et indicateurs d'activité du tableau de bord."""
+
+    def setUp(self):
+        creer_utilisateur("gerant", groupe="Gerant")
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+        self.categorie = Categorie.objects.create(nom="Alimentation")
+        self.produit = Produit.objects.create(
+            reference="ACT-001", nom="Riz", categorie=self.categorie,
+            prix_achat=Decimal("1000.00"), prix_vente=Decimal("1500.00"),
+            quantite_stock=100, seuil_alerte=5,
+        )
+
+    def test_jours_de_la_periode(self):
+        self.assertEqual(statistiques.jours_de_la_periode("jour"), 1)
+        self.assertEqual(statistiques.jours_de_la_periode("semaine"), 7)
+        self.assertEqual(statistiques.jours_de_la_periode("mois"), 30)
+        self.assertEqual(statistiques.jours_de_la_periode("inconnu"), 7)
+
+    def test_activite_compte_chaque_type(self):
+        services.enregistrer_mouvement(self.produit, Mouvement.ENTREE, 10)
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 4)
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 6)
+        services.enregistrer_mouvement(self.produit, Mouvement.AJUSTEMENT, 2, motif="Casse")
+
+        activite = statistiques.activite_periode(7)
+
+        self.assertEqual(activite["entrees"], 1)
+        self.assertEqual(activite["sorties"], 2)
+        self.assertEqual(activite["ajustements"], 1)
+        self.assertEqual(activite["total"], 4)
+
+    def test_valeur_des_sorties_inclut_les_ajustements(self):
+        """Sorties et ajustements quittent tous deux le stock."""
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 4)
+        services.enregistrer_mouvement(self.produit, Mouvement.AJUSTEMENT, 2, motif="Casse")
+        services.enregistrer_mouvement(self.produit, Mouvement.ENTREE, 50)  # ne compte pas
+
+        activite = statistiques.activite_periode(7)
+        self.assertEqual(activite["valeur_sorties"], Decimal("6000.00"))  # (4+2) x 1000
+
+    def test_activite_vide(self):
+        activite = statistiques.activite_periode(7)
+
+        self.assertEqual(activite["total"], 0)
+        self.assertEqual(activite["valeur_sorties"], Decimal("0.00"))
+
+    def test_selecteur_de_periode_sur_la_page(self):
+        reponse = self.client.get(reverse("inventory:tableau_bord"), {"periode": "mois"})
+
+        self.assertEqual(reponse.status_code, 200)
+        self.assertEqual(reponse.context["periode_active"], "mois")
+        self.assertEqual(reponse.context["activite"]["jours"], 30)
+
+    def test_periode_par_defaut(self):
+        reponse = self.client.get(reverse("inventory:tableau_bord"))
+        self.assertEqual(reponse.context["activite"]["jours"], 7)
+
+    def test_periode_invalide_retombe_sur_sept_jours(self):
+        reponse = self.client.get(reverse("inventory:tableau_bord"), {"periode": "siecle"})
+        self.assertEqual(reponse.context["activite"]["jours"], 7)
+
+    def test_produits_les_plus_mouvementes(self):
+        autre = Produit.objects.create(
+            reference="ACT-002", nom="Huile", categorie=self.categorie,
+            prix_achat=Decimal("500.00"), prix_vente=Decimal("700.00"), quantite_stock=100,
+        )
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 30)
+        services.enregistrer_mouvement(autre, Mouvement.SORTIE, 5)
+        services.enregistrer_mouvement(autre, Mouvement.ENTREE, 90)  # ne compte pas
+
+        classement = list(statistiques.produits_les_plus_mouvementes(7))
+
+        self.assertEqual([p.nom for p in classement], ["Riz", "Huile"])
+        self.assertEqual(classement[0].total_sorties, 30)
+        self.assertEqual(classement[1].total_sorties, 5)
+
+    def test_produit_sans_sortie_absent_du_classement(self):
+        services.enregistrer_mouvement(self.produit, Mouvement.ENTREE, 10)
+        self.assertEqual(list(statistiques.produits_les_plus_mouvementes(7)), [])
+
+
+class StatistiquesProduitTests(BaseApplicationTestCase):
+    """Indicateurs de la fiche produit : rythme, couverture, franchissements."""
+
+    def setUp(self):
+        creer_utilisateur("gerant", groupe="Gerant")
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+        self.categorie = Categorie.objects.create(nom="Alimentation")
+        self.produit = Produit.objects.create(
+            reference="STA-001", nom="Riz", categorie=self.categorie,
+            prix_achat=Decimal("1000.00"), prix_vente=Decimal("1250.00"),
+            quantite_stock=300, seuil_alerte=50,
+        )
+
+    def test_sorties_et_moyenne(self):
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 30)
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 30)
+
+        stats = statistiques.statistiques_produit(self.produit, jours=30)
+
+        self.assertEqual(stats["sorties_total"], 60)
+        self.assertEqual(stats["sorties_moyenne"], 2.0)  # 60 / 30 jours
+
+    def test_couverture(self):
+        """240 en stock, 2 par jour : 120 jours de couverture."""
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 60)
+
+        stats = statistiques.statistiques_produit(self.produit, jours=30)
+        self.assertEqual(stats["couverture"], 120)
+
+    def test_couverture_indeterminee_sans_sortie(self):
+        stats = statistiques.statistiques_produit(self.produit, jours=30)
+
+        self.assertEqual(stats["sorties_total"], 0)
+        self.assertIsNone(stats["couverture"])
+
+    def test_derniere_entree(self):
+        services.enregistrer_mouvement(self.produit, Mouvement.ENTREE, 100)
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 10)
+
+        stats = statistiques.statistiques_produit(self.produit)
+
+        self.assertIsNotNone(stats["derniere_entree"])
+        self.assertEqual(stats["derniere_entree"].quantite, 100)
+
+    def test_ajustement_compte_comme_une_sortie(self):
+        services.enregistrer_mouvement(self.produit, Mouvement.AJUSTEMENT, 30, motif="Casse")
+
+        stats = statistiques.statistiques_produit(self.produit, jours=30)
+        self.assertEqual(stats["sorties_total"], 30)
+
+    def test_franchissements_du_seuil(self):
+        """Descendre, remonter, redescendre = deux franchissements."""
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 270)  # 300 -> 30
+        services.enregistrer_mouvement(self.produit, Mouvement.ENTREE, 270)  # 30 -> 300
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 280)  # 300 -> 20
+
+        stats = statistiques.statistiques_produit(self.produit, jours=30)
+        self.assertEqual(stats["franchissements_seuil"], 2)
+
+    def test_sorties_consecutives_sous_le_seuil_comptent_pour_une(self):
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 270)  # 300 -> 30
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 5)    # 30 -> 25
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 5)    # 25 -> 20
+
+        stats = statistiques.statistiques_produit(self.produit, jours=30)
+        self.assertEqual(stats["franchissements_seuil"], 1)
+
+    def test_aucun_franchissement_si_stock_reste_haut(self):
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 10)
+
+        stats = statistiques.statistiques_produit(self.produit, jours=30)
+        self.assertEqual(stats["franchissements_seuil"], 0)
+
+    def test_affichage_sur_la_fiche_produit(self):
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 60)
+
+        reponse = self.client.get(self.produit.get_absolute_url())
+
+        self.assertEqual(reponse.status_code, 200)
+        self.assertContains(reponse, "Couverture")
+        self.assertContains(reponse, "Sorties sur 30 jours")
+        self.assertContains(reponse, "Dernière entrée")
+        self.assertEqual(reponse.context["stats"]["sorties_total"], 60)
+
+    def test_marge_en_pourcentage(self):
+        reponse = self.client.get(self.produit.get_absolute_url())
+        # Achat 1000, vente 1250 : marge de 250, soit 25 %.
+        self.assertEqual(reponse.context["marge_pourcentage"], Decimal("25"))
+
+
+class PanneauMouvementTests(BaseApplicationTestCase):
+    """Compteurs du jour, valeur du mouvement et bouton « Tout sortir »."""
+
+    def setUp(self):
+        self.magasinier = creer_utilisateur("magasinier", groupe="Magasinier")
+        self.client.login(username="magasinier", password=MOT_DE_PASSE_TEST)
+        self.categorie = Categorie.objects.create(nom="Alimentation")
+        self.produit = Produit.objects.create(
+            reference="PAN-001", nom="Riz", categorie=self.categorie,
+            prix_achat=Decimal("1000.00"), prix_vente=Decimal("1500.00"),
+            quantite_stock=40, seuil_alerte=5,
+        )
+
+    def test_compteur_du_jour(self):
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 2)
+        services.enregistrer_mouvement(self.produit, Mouvement.SORTIE, 3)
+        services.enregistrer_mouvement(self.produit, Mouvement.ENTREE, 10)  # autre type
+
+        reponse = self.client.get(
+            reverse("inventory:sortie_stock"), {"produit": self.produit.pk}
+        )
+        self.assertEqual(reponse.context["mouvements_du_jour"], 2)
+
+    def test_bouton_tout_sortir_preremplit_la_quantite(self):
+        reponse = self.client.get(
+            reverse("inventory:sortie_stock"),
+            {"produit": self.produit.pk, "quantite": self.produit.quantite_stock},
+        )
+
+        self.assertEqual(reponse.status_code, 200)
+        self.assertEqual(reponse.context["form"].initial["quantite"], "40")
+        self.assertContains(reponse, "Tout sortir (40)")
+
+    def test_valeur_du_mouvement_calculee(self):
+        reponse = self.client.get(
+            reverse("inventory:sortie_stock"),
+            {"produit": self.produit.pk, "quantite": "10"},
+        )
+        self.assertEqual(reponse.context["valeur_mouvement"], Decimal("10000.00"))
+
+    def test_pas_de_valeur_sans_quantite(self):
+        reponse = self.client.get(
+            reverse("inventory:sortie_stock"), {"produit": self.produit.pk}
+        )
+        self.assertIsNone(reponse.context.get("valeur_mouvement"))
+
+    def test_bouton_absent_sur_une_entree(self):
+        reponse = self.client.get(
+            reverse("inventory:entree_stock"), {"produit": self.produit.pk}
+        )
+        self.assertNotContains(reponse, "Tout sortir")
+
+    def test_quantite_invalide_ignoree(self):
+        reponse = self.client.get(
+            reverse("inventory:sortie_stock"),
+            {"produit": self.produit.pk, "quantite": "beaucoup"},
+        )
+        self.assertEqual(reponse.status_code, 200)
+        self.assertNotIn("quantite", reponse.context["form"].initial)
+
+
+class ExportMouvementsTests(BaseApplicationTestCase):
+    """Export Excel de l'historique des mouvements."""
+
+    def setUp(self):
+        self.gerant = creer_utilisateur("gerant", groupe="Gerant")
+        creer_utilisateur("magasinier", groupe="Magasinier")
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+
+        self.categorie = Categorie.objects.create(nom="Alimentation")
+        self.produit = Produit.objects.create(
+            reference="EXM-001", nom="Riz 25kg", categorie=self.categorie,
+            prix_achat=Decimal("1000.00"), prix_vente=Decimal("1400.00"), quantite_stock=100,
+        )
+        services.enregistrer_mouvement(
+            self.produit, Mouvement.ENTREE, 20, motif="Livraison",
+            utilisateur=self.gerant, document="BL-1000",
+        )
+        services.enregistrer_mouvement(
+            self.produit, Mouvement.SORTIE, 5, motif="Vente",
+            utilisateur=self.gerant, document="BON-2000", destination="Client A",
+        )
+        services.enregistrer_mouvement(
+            self.produit, Mouvement.AJUSTEMENT, 2, motif="Casse", utilisateur=self.gerant,
+        )
+
+    def _classeur(self, parametres=None):
+        reponse = self.client.get(
+            reverse("inventory:export_mouvements_excel"), parametres or {}
+        )
+        self.assertEqual(reponse.status_code, 200)
+        return reponse, load_workbook(BytesIO(reponse.content))
+
+    def test_generation_du_fichier(self):
+        reponse, classeur = self._classeur()
+
+        self.assertEqual(
+            reponse["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("mouvements", reponse["Content-Disposition"])
+        self.assertEqual(classeur.active.title, "Historique")
+
+    def test_colonnes(self):
+        _, classeur = self._classeur()
+        entetes = [cellule.value for cellule in classeur.active[4]]
+        self.assertEqual(entetes, [titre for titre, _ in exports.COLONNES_MOUVEMENTS])
+
+    def test_contenu_des_lignes(self):
+        _, classeur = self._classeur()
+        feuille = classeur.active
+
+        lignes = {}
+        for numero in range(5, feuille.max_row + 1):
+            lignes[feuille.cell(row=numero, column=4).value] = numero
+        self.assertEqual(set(lignes), {"Entrée", "Sortie", "Ajustement"})
+
+        ligne_sortie = lignes["Sortie"]
+        self.assertEqual(feuille.cell(row=ligne_sortie, column=2).value, "EXM-001")
+        self.assertEqual(feuille.cell(row=ligne_sortie, column=5).value, 5)
+        self.assertEqual(feuille.cell(row=ligne_sortie, column=8).value, "Client A")
+        self.assertEqual(feuille.cell(row=ligne_sortie, column=9).value, "BON-2000")
+        self.assertEqual(feuille.cell(row=ligne_sortie, column=10).value, Decimal("5000.00"))
+        self.assertEqual(feuille.cell(row=ligne_sortie, column=11).value, "gerant")
+
+    def test_formatage(self):
+        _, classeur = self._classeur()
+        feuille = classeur.active
+
+        self.assertTrue(feuille.cell(row=4, column=1).font.bold)
+        self.assertIsNotNone(feuille.auto_filter.ref)
+        self.assertEqual(feuille.freeze_panes, "A5")
+        self.assertEqual(feuille.cell(row=5, column=10).number_format, "#,##0.00")
+        # Le type est coloré selon sa nature.
+        self.assertNotEqual(feuille.cell(row=5, column=4).fill.fgColor.rgb, "00000000")
+
+    def test_export_respecte_les_filtres(self):
+        _, classeur = self._classeur({"type": Mouvement.AJUSTEMENT})
+        feuille = classeur.active
+
+        types = [
+            feuille.cell(row=numero, column=4).value
+            for numero in range(5, feuille.max_row + 1)
+        ]
+        self.assertEqual(types, ["Ajustement"])
+
+    def test_export_interdit_au_magasinier(self):
+        self.client.login(username="magasinier", password=MOT_DE_PASSE_TEST)
+        reponse = self.client.get(reverse("inventory:export_mouvements_excel"))
+        self.assertEqual(reponse.status_code, 403)
+
+
+class PaginationNumeroteeTests(BaseApplicationTestCase):
+    """Pagination numérotée avec élision."""
+
+    def setUp(self):
+        creer_utilisateur("gerant", groupe="Gerant")
+        self.client.login(username="gerant", password=MOT_DE_PASSE_TEST)
+        self.categorie = Categorie.objects.create(nom="Alimentation")
+        for numero in range(45):
+            Produit.objects.create(
+                reference=f"PAG-{numero:03d}", nom=f"Produit {numero:03d}",
+                categorie=self.categorie, prix_achat=Decimal("100.00"),
+                prix_vente=Decimal("150.00"), quantite_stock=10,
+            )
+
+    def test_numeros_de_pages_presents(self):
+        reponse = self.client.get(reverse("inventory:produit_liste"))
+
+        self.assertEqual(reponse.status_code, 200)
+        self.assertEqual(list(reponse.context["pages_affichees"]), [1, 2, 3])
+
+    def test_resume_de_pagination(self):
+        reponse = self.client.get(reverse("inventory:produit_liste"))
+        self.assertEqual(reponse.context["resume_pagination"], "20 produits sur 45")
+
+    def test_pas_de_pagination_sur_une_seule_page(self):
+        Produit.objects.all().delete()
+        Produit.objects.create(
+            reference="SEUL-001", nom="Seul", categorie=self.categorie,
+            prix_achat=Decimal("100.00"), prix_vente=Decimal("150.00"),
+        )
+
+        reponse = self.client.get(reverse("inventory:produit_liste"))
+        self.assertEqual(list(reponse.context["pages_affichees"]), [])
+
+    def test_navigation_sur_la_derniere_page(self):
+        reponse = self.client.get(reverse("inventory:produit_liste"), {"page": 3})
+
+        self.assertEqual(reponse.status_code, 200)
+        self.assertEqual(reponse.context["resume_pagination"], "5 produits sur 45")
